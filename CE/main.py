@@ -11,7 +11,7 @@ model = AVModel()
 model.load_state_dict(torch.load('best_model.pt',  map_location=torch.device('cpu')))
 model.eval()  # Set the model to evaluation mode
 
-world, client = init_world('Town03', 'ClearNoon')
+world, client = init_world('Town01', 'ClearNoon')
 spawn_point = get_spawn_point(world)
 
 ego_vehicle = spawn_ego_vehicle(world, spawn_point)

@@ -83,47 +83,43 @@ class ResidualBlock(nn.Module):
 class AVModel(nn.Module):
     def __init__(self):
         super(AVModel, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=1, out_channels=64, kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv1 = SeparableConv2d(in_channels=3, out_channels=64, kernel_size=3, stride=1, padding=1, bias=False)
+        self.norm = nn.LayerNorm(64)
+        self.attention = nn.MultiheadAttention(embed_dim=64, num_heads=1, dropout=0.5, batch_first=True)
+        self.scale = nn.Parameter(torch.zeros(1))
         self.act = nn.SELU()
-        self.positional_encoding = PositionalEncoding2d(64, 119, 256)
 
         self.conv_layers = nn.Sequential(
-            ResidualBlock(in_channels=64, out_channels=64, kernel_size=3, num_layers=4, pool=True, short=True),
+            ResidualBlock(in_channels=64, out_channels=64, kernel_size=3, num_layers=3, pool=True, short=True),
             ResidualBlock(in_channels=64, out_channels=128, kernel_size=3, num_layers=4, pool=True, short=True),
             ResidualBlock(in_channels=128, out_channels=256, kernel_size=3, num_layers=4, pool=True, short=True),
-            ResidualBlock(in_channels=256, out_channels=512, kernel_size=3, num_layers=4, pool=True, short=True),
+            nn.Dropout2d(0.5),
         )
-
-        self.attention = nn.MultiheadAttention(embed_dim=32, num_heads=4, dropout=0.5, batch_first=True)
 
         self.dense_layers = nn.Sequential(
-            nn.Linear(512, 1024, bias=False),
+            nn.Linear(256, 128, bias=False),
             nn.SELU(),
-            nn.Linear(1024, 512, bias=False),
-            nn.SELU(),
-            nn.Linear(512, 256, bias=False),
-            nn.SELU(),
-            nn.Dropout(0.5)
+            nn.Dropout(0.5),
         )
 
-        self.output_layer = nn.Linear(256, 3)
+        self.output_layer = nn.Linear(128, 3)
 
     def forward(self, x):
         x = self.conv1(x)
-        x = self.act(x)
-        #x = F.layer_norm(self.positional_encoding(x), x.shape)
-        x = self.conv_layers(x)
-
         # batch_size, channels, height, width = x.size()
-        # x = x.view(batch_size, channels, height * width)
-        # attention_output, _ = self.attention(x, x, x)
-        # x = F.layer_norm(x + attention_output, x.shape)
+        # x_att = x.reshape(batch_size, channels, height * width).transpose(1, 2)
+        # x_att = self.norm(x_att)
+        # attention_output, _ = self.attention(x_att, x_att, x_att)
+        # attention_output = attention_output.transpose(1, 2).reshape(batch_size, channels, height, width)
+        # x = self.scale * attention_output + x
+        x = self.act(x)
 
+        x = self.conv_layers(x)
         x = torch.mean(x.view(x.size(0), x.size(1), -1), dim=2) # GlobalAveragePooling2D
         x = self.dense_layers(x)
-        x = self.output_layer(x)
+        out = self.output_layer(x)
 
-        steering_output = F.hardtanh(x[:, 0:1])
-        throttle_brake_output = F.hardtanh(x[:, 1:], min_val=0)
-        out = torch.cat((steering_output, throttle_brake_output), dim=1)
+        # steering_output = F.hardtanh(x[:, 0:1])
+        # throttle_brake_output = F.hardtanh(x[:, 1:], min_val=0)
+        # out = torch.cat((steering_output, throttle_brake_output), dim=1)
         return out
