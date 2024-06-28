@@ -79,7 +79,7 @@ class ResidualBlock(nn.Module):
             out = self.sact(out)
 
         return out
-    
+
 class AVModel(nn.Module):
     def __init__(self):
         super(AVModel, self).__init__()
@@ -90,19 +90,23 @@ class AVModel(nn.Module):
         self.act = nn.SELU()
 
         self.conv_layers = nn.Sequential(
-            ResidualBlock(in_channels=64, out_channels=64, kernel_size=3, num_layers=3, pool=True, short=True),
+            ResidualBlock(in_channels=64, out_channels=64, kernel_size=3, num_layers=4, pool=True, short=True),
             ResidualBlock(in_channels=64, out_channels=128, kernel_size=3, num_layers=4, pool=True, short=True),
             ResidualBlock(in_channels=128, out_channels=256, kernel_size=3, num_layers=4, pool=True, short=True),
             nn.Dropout2d(0.5),
         )
 
         self.dense_layers = nn.Sequential(
-            nn.Linear(256, 128, bias=False),
+            nn.Linear(256, 100, bias=False),
+            nn.SELU(),
+            nn.Linear(100, 50, bias=False),
+            nn.SELU(),
+            nn.Linear(50, 10, bias=False),
             nn.SELU(),
             nn.Dropout(0.5),
         )
 
-        self.output_layer = nn.Linear(128, 3)
+        self.output_layer = nn.Linear(10, 3)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -117,9 +121,12 @@ class AVModel(nn.Module):
         x = self.conv_layers(x)
         x = torch.mean(x.view(x.size(0), x.size(1), -1), dim=2) # GlobalAveragePooling2D
         x = self.dense_layers(x)
-        out = self.output_layer(x)
+        x = self.output_layer(x)
+        out = torch.sigmoid(x)
 
+        # Bounding the output
         # steering_output = F.hardtanh(x[:, 0:1])
         # throttle_brake_output = F.hardtanh(x[:, 1:], min_val=0)
         # out = torch.cat((steering_output, throttle_brake_output), dim=1)
         return out
+

@@ -5,6 +5,8 @@ import os
 import csv
 import torch
 import numpy as np
+from sensors import RGBCamera
+from model import AVModel
 from matplotlib import pyplot as plt
 from PIL import Image
 from torchvision import transforms
@@ -18,6 +20,13 @@ class CropCustom(object):
         cropped_img = img.crop((0, top, width, bottom))
         return cropped_img
 
+def load_model(model_path, device):
+    model = AVModel()
+    model.load_state_dict(torch.load(model_path))
+    model.to(device)
+    model.eval()
+    return model
+
 def init_world(town, weather):
     client = carla.Client('localhost', 2000)
     client.set_timeout(20.0)
@@ -30,6 +39,15 @@ def init_world(town, weather):
     world.set_weather(getattr(carla.WeatherParameters, weather))
     return world, client
 
+def setup_traffic_manager(client):
+    traffic_manager = client.get_trafficmanager(8000)
+    traffic_manager.set_synchronous_mode(True)
+    traffic_manager.set_global_distance_to_leading_vehicle(2.5)
+    traffic_manager.set_hybrid_physics_mode(True)
+    traffic_manager.set_hybrid_physics_radius(70.0)
+
+    return traffic_manager
+
 def set_red_light_time(world):
     actor_list = world.get_actors()
     for actor_ in actor_list:
@@ -37,11 +55,15 @@ def set_red_light_time(world):
             actor_.set_red_time(1.0)
             world.tick()
 
-def get_spawn_point(world):
+def create_route(world, num_points=50):
     spawn_points = world.get_map().get_spawn_points()
     random.shuffle(spawn_points)
     spawn_point = random.choice(spawn_points)
-    return spawn_point
+    spawn_points.remove(spawn_point)
+    if len(spawn_points) >= num_points - 1:
+        spawn_points = random.sample(spawn_points, num_points)
+    route = [point.location for point in spawn_points]
+    return spawn_point, route
 
 def spawn_ego_vehicle(world, spawn_point):
     ego_bp = world.get_blueprint_library().find('vehicle.tesla.model3')
@@ -55,27 +77,26 @@ preprocess_no_norm = v2.Compose([
     v2.ToPILImage(),
     CropCustom(),
     v2.Resize((119//2, 256//2)),
-    v2.ToImage(),
-    v2.ToDtype(torch.float32, scale=True),
+    v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)]),
 ])
 
 preprocess = v2.Compose([
     v2.ToPILImage(),
     CropCustom(),
     v2.Resize((119//2, 256//2)),
-    v2.ToImage(),
-    v2.ToDtype(torch.float32, scale=True),
+    v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)]),
     v2.Normalize(mean=(0.4872, 0.4669, 0.4469,), std=(0.1138, 0.1115, 0.1074,)),
 ])
 
-def process_image(image, model, vehicle):
+def model_control(sensor, model, vehicle):
+    image = sensor.get_sensor_data()
     array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-    array = np.reshape(array, (image.height, image.width, 4)).copy()
+    array = np.reshape(array, (image.height, image.width, 4))
     array = array[:, :, :3]
     array = array[:, :, ::-1]
+    array = array.copy()
  
     input_tensor = preprocess(array).unsqueeze(0)
-    print(input_tensor.shape)
     
     #before_tensor = preprocess_no_norm(array)
     #plt.imshow(before_tensor.permute(1, 2, 0))
@@ -92,22 +113,20 @@ def process_image(image, model, vehicle):
     with torch.no_grad():
         output = model(input_tensor)
     
-    print("Output", output[0])
-    steer, throttle, brake = output[0].numpy()
-    control = carla.VehicleControl()
-    control.steer = float(steer)
-    control.throttle = float(throttle)
-    control.brake = float(brake)
-    vehicle.apply_control(control)
-    print(vehicle.get_velocity())
+    output = output.detach().cpu().numpy().flatten()
+    steer, throttle, brake = output
+    
+    steer = float(steer)
+    throttle = float(throttle)
+    brake = float(brake)
+    if brake < 0.05: brake = 0.0
+    # steer = (float(steer) * 2.0) - 1.0
+    
+    return carla.VehicleControl(throttle=throttle, steer=steer, brake=brake)
 
-def start_camera(world, vehicle, trans, callback, model):
-    camera_bp = world.get_blueprint_library().find('sensor.camera.rgb')
-    camera_bp.set_attribute('image_size_x', '256')
-    camera_bp.set_attribute('image_size_y', '256')
-    camera = world.spawn_actor(camera_bp, trans, attach_to=vehicle)
-    camera.listen(lambda image: callback(image, model, vehicle))
-    return camera
+def start_camera(world, vehicle):
+    rgb_cam = RGBCamera(world, vehicle)
+    return rgb_cam
 
 def update_spectator(spectator, vehicle):
     ego_transform = vehicle.get_transform()
