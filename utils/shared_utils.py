@@ -57,4 +57,4 @@ def cleanup(ego_vehicle, camera, csv_file=None):
     if csv_file is not None:
         csv_file.close()
     ego_vehicle.destroy()
-    camera.destroy()
+    camera.get_sensor().destroy()

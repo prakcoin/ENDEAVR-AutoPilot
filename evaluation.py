@@ -1,3 +1,4 @@
+import os
 import argparse
 import torch
 from utils.shared_utils import init_world, create_route, set_red_light_time, spawn_ego_vehicle, setup_traffic_manager, cleanup, update_spectator
@@ -7,7 +8,10 @@ from utils.evaluation_utils import start_camera, model_control, load_model
 # Linux: ./CarlaUE4.sh -carla-server-timeout=10000ms -RenderOffScreen
 
 def main(args):
-    model_path = 'best_model.pt'
+    current_directory = os.getcwd()
+    parent_directory = os.path.dirname(current_directory)
+    model_path = os.path.join(parent_directory, 'ENDEAVR-AutoPilot', 'model', 'saved_models', 'best_model.pt')
+    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_model(model_path, device)
 
@@ -28,7 +32,7 @@ def main(args):
             transform = ego_vehicle.get_transform()
             vehicle_location = transform.location
             world.tick()
-            control = model_control(camera, model, ego_vehicle)
+            control = model_control(camera, model)
             print(f"Steering: {control.steer}, Throttle: {control.throttle}, Brake: {control.brake}")
             ego_vehicle.apply_control(control)
             update_spectator(spectator, ego_vehicle)

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from separableconv import SeparableConv2d
+from .separableconv import SeparableConv2d
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, kernel_size: int, num_layers: int, pool: bool, short: bool):

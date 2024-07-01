@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from separableconv import SeparableConv2d
-from residual_block import ResidualBlock
+from .separableconv import SeparableConv2d
+from .residual_block import ResidualBlock
 
 class AVModel(nn.Module):
     def __init__(self):

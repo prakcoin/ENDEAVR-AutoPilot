@@ -1,7 +1,7 @@
 import carla
 import torch
 import numpy as np
-from sensors import RGBCamera
+from .sensors import RGBCamera
 from model.AVModel import AVModel
 from torchvision.transforms import v2
 
