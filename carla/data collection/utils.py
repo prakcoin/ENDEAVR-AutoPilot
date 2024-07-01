@@ -1,6 +1,5 @@
 import carla
 import random
-import queue
 import os
 import csv
 

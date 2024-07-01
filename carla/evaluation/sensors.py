@@ -1,15 +1,4 @@
 import carla
-import random
-import queue
-import os
-import csv
-import torch
-import numpy as np
-from model import AVModel
-from matplotlib import pyplot as plt
-from PIL import Image
-from torchvision import transforms
-from torchvision.transforms import v2
 
 class RGBCamera:
     def __init__(self, world, vehicle, size_x = '256', size_y = '256'):

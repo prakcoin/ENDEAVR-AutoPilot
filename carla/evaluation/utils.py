@@ -1,15 +1,9 @@
 import carla
 import random
-import queue
-import os
-import csv
 import torch
 import numpy as np
 from sensors import RGBCamera
-from model import AVModel
-from matplotlib import pyplot as plt
-from PIL import Image
-from torchvision import transforms
+from model.AVModel import AVModel
 from torchvision.transforms import v2
 
 class CropCustom(object):

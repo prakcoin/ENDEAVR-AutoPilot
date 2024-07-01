@@ -1,7 +1,4 @@
 import torch
-import carla
-import numpy as np
-from sensors import RGBCamera
 from utils import init_world, create_route, spawn_ego_vehicle, start_camera, model_control, update_spectator, setup_traffic_manager, load_model
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
