@@ -1,6 +1,7 @@
 import argparse
 import torch
-from carla.evaluation.evaluation_utils import init_world, create_route, spawn_ego_vehicle, start_camera, model_control, update_spectator, setup_traffic_manager, load_model
+from utils.shared_utils import init_world, create_route, set_red_light_time, spawn_ego_vehicle, setup_traffic_manager, cleanup, update_spectator
+from utils.evaluation_utils import start_camera, model_control, load_model
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
 # Linux: ./CarlaUE4.sh -carla-server-timeout=10000ms -RenderOffScreen
@@ -12,7 +13,7 @@ def main(args):
 
     world, client = init_world(args.town, args.weather)
     traffic_manager = setup_traffic_manager(client)
-
+    set_red_light_time(world)
     spawn_point, route = create_route(world)
 
     ego_vehicle = spawn_ego_vehicle(world, spawn_point)
@@ -34,9 +35,7 @@ def main(args):
     except KeyboardInterrupt:
         pass
     finally:
-        ego_vehicle.destroy()
-        camera.destroy()
-        print("Simulation ended.")
+        cleanup(ego_vehicle, camera)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Data Collection Script')

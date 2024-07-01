@@ -57,14 +57,6 @@ def model_control(sensor, model):
     
     return carla.VehicleControl(throttle=throttle, steer=steer, brake=brake)
 
-def update_spectator(spectator, vehicle):
-    ego_transform = vehicle.get_transform()
-    spectator_transform = carla.Transform(
-        ego_transform.location + carla.Location(z=50),  # Adjust the height as needed
-        carla.Rotation(pitch=-90)  # Look straight down
-    )
-    spectator.set_transform(spectator_transform)
-
 def start_camera(world, vehicle):
     rgb_cam = RGBCamera(world, vehicle)
     return rgb_cam

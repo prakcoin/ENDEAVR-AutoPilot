@@ -26,7 +26,6 @@ def set_red_light_time(world):
     for actor_ in actor_list:
         if isinstance(actor_, carla.TrafficLight):
             actor_.set_red_time(1.0)
-            world.tick()
 
 def create_route(world, num_points=50):
     spawn_points = world.get_map().get_spawn_points()
@@ -45,3 +44,17 @@ def spawn_ego_vehicle(world, spawn_point):
     ego_bp.set_attribute('color', ego_color)
     ego_vehicle = world.spawn_actor(ego_bp, spawn_point)
     return ego_vehicle
+
+def update_spectator(spectator, vehicle):
+    ego_transform = vehicle.get_transform()
+    spectator_transform = carla.Transform(
+        ego_transform.location + carla.Location(z=50),
+        carla.Rotation(pitch=-90)
+    )
+    spectator.set_transform(spectator_transform)
+
+def cleanup(ego_vehicle, camera, csv_file=None):
+    if csv_file is not None:
+        csv_file.close()
+    ego_vehicle.destroy()
+    camera.destroy()
