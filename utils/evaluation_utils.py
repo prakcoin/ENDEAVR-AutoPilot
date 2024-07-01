@@ -50,11 +50,10 @@ def model_control(sensor, model):
     output = output.detach().cpu().numpy().flatten()
     steer, throttle, brake = output
     
-    steer = float(steer)
     throttle = float(throttle)
     brake = float(brake)
     if brake < 0.05: brake = 0.0
-    
+    steer = (float(steer) * 2.0) - 1.0
     return carla.VehicleControl(throttle=throttle, steer=steer, brake=brake)
 
 def start_camera(world, vehicle):
