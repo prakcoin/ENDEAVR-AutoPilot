@@ -1,6 +1,4 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from .separableconv import SeparableConv2d
 
 class ResidualBlock(nn.Module):
@@ -13,13 +11,13 @@ class ResidualBlock(nn.Module):
         self.short = short
 
         self.inconv = nn.Sequential(
-            SeparableConv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=1, padding=1, bias=False),
+            SeparableConv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size),
             nn.SELU()
         )
 
         layers = []
         for _ in range(num_layers - 1):
-            layers.append(SeparableConv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=kernel_size, stride=1, padding=1, bias=False))
+            layers.append(SeparableConv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=kernel_size))
             layers.append(nn.SELU())
         self.convlayers = nn.Sequential(*layers)
 
