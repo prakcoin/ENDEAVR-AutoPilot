@@ -23,7 +23,7 @@ preprocess = v2.Compose([
 
 def load_model(model_path, device):
     model = AVModel()
-    model.load_state_dict(torch.load(model_path))
+    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
     model.to(device)
     model.eval()
     return model
@@ -52,13 +52,15 @@ def model_control(sensor, model):
     
     output = output.detach().cpu().numpy().flatten()
     steer, throttle_brake = output
-
+    throttle_brake = float(throttle_brake)
+    throttle, brake = 0.0, 0.0
     if throttle_brake >= 0.5:
         throttle = (throttle_brake - 0.5) / 0.5
     else:
         brake = (0.5 - throttle_brake) / 0.5
     
     steer = (float(steer) * 2.0) - 1.0
+    print(f"Steer: {steer} - Throttle: {throttle} - Brake: {brake}")
     return carla.VehicleControl(throttle=throttle, steer=steer, brake=brake)
 
 def start_camera(world, vehicle):
