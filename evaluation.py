@@ -10,7 +10,7 @@ from utils.evaluation_utils import start_camera, model_control, load_model
 def main(args):
     current_directory = os.getcwd()
     parent_directory = os.path.dirname(current_directory)
-    model_path = os.path.join(parent_directory, 'ENDEAVR-AutoPilot', 'model', 'saved_models', 'best_model.pt')
+    model_path = os.path.join(parent_directory, 'ENDEAVR-AutoPilot', 'model', 'saved_models', 'av_model.pt')
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_model(model_path, device)
