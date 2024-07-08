@@ -21,6 +21,13 @@ def setup_traffic_manager(client):
     traffic_manager.set_hybrid_physics_radius(70.0)
     return traffic_manager
 
+def setup_vehicle_for_tm(traffic_manager, ego_vehicle, route):
+    ego_vehicle.set_autopilot(True)
+    # traffic_manager.set_path(ego_vehicle, route)
+    traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
+    traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
+    traffic_manager.set_desired_speed(ego_vehicle, 40)
+
 def set_red_light_time(world):
     actor_list = world.get_actors()
     for actor_ in actor_list:

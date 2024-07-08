@@ -20,3 +20,8 @@ def queue_callback(image, image_queue, control_queue, ego_vehicle):
 def start_camera(world, vehicle, callback):
     rgb_cam = RGBCamera(world, vehicle, size_x='256', size_y='256', callback=callback)
     return rgb_cam
+
+def end_collection(data_vals, steer_frames, running_frames):
+    steering_needed = data_vals["steering"] < steer_frames
+    running_needed = data_vals["running"] < running_frames
+    return steering_needed, running_needed
