@@ -30,25 +30,32 @@ def main(args):
     data_vals = {"steering": 0, "running": 0}
     running = True
     while running:
-        world.tick()
-        update_spectator(spectator, ego_vehicle)
-        if not image_queue.empty() and not control_queue.empty():
-            image = image_queue.get()
-            control = control_queue.get()
-            
-            steering_needed, running_needed = end_collection(control, data_vals, args.steer_frames, args.running_frames)
-            if steering_needed and (control[0] > 0.05 or control[0] < -0.05):
-                data_vals["steering"] += 1
-                writer.writerow([control[0], control[1], control[2], image.frame])
-                image.save_to_disk(os.path.join(run_dir, 'img', f'{image.frame}.png'))
+        try:
+            world.tick()
+            update_spectator(spectator, ego_vehicle)
+            if not image_queue.empty() and not control_queue.empty():
+                image = image_queue.get()
+                control = control_queue.get()
+                steering_needed, running_needed = end_collection(data_vals, args.steer_frames, args.running_frames)
+                # print(control[1])
+                # print(control[1] > 0.0)
+                # print(-0.05 < control[0] < 0.05)
+                # print(running_needed)
+                if steering_needed and (control[0] > 0.05 or control[0] < -0.05):
+                    data_vals["steering"] += 1
+                    writer.writerow([control[0], control[1], control[2], image.frame])
+                    image.save_to_disk(os.path.join(run_dir, 'img', f'{image.frame}.png'))
+                elif running_needed and (-0.05 < control[0] < 0.05):
+                    data_vals["running"] += 1
+                    writer.writerow([control[0], control[1], control[2], image.frame])
+                    image.save_to_disk(os.path.join(run_dir, 'img', f'{image.frame}.png'))
 
-            if running_needed and control[1] > 0.0 and (-0.05 < control[0] < 0.05):
-                data_vals["running"] += 1
-                writer.writerow([control[0], control[1], control[2], image.frame])
-                image.save_to_disk(os.path.join(run_dir, 'img', f'{image.frame}.png'))
+                running = steering_needed or running_needed
+        except KeyboardInterrupt:
+            print("Simulation interrupted")
+            cleanup(ego_vehicle, camera, csv_file)
 
-            running = steering_needed or running_needed
-
+    print("Simulation complete")
     cleanup(ego_vehicle, camera, csv_file)
 
 if __name__ == '__main__':

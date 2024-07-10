@@ -17,16 +17,16 @@ def setup_traffic_manager(client):
     traffic_manager = client.get_trafficmanager(8000)
     traffic_manager.set_synchronous_mode(True)
     traffic_manager.set_global_distance_to_leading_vehicle(2.5)
-    traffic_manager.set_hybrid_physics_mode(True)
-    traffic_manager.set_hybrid_physics_radius(70.0)
+    # traffic_manager.set_hybrid_physics_mode(True)
+    # traffic_manager.set_hybrid_physics_radius(70.0)
     return traffic_manager
 
 def setup_vehicle_for_tm(traffic_manager, ego_vehicle, route):
-    ego_vehicle.set_autopilot(True)
-    # traffic_manager.set_path(ego_vehicle, route)
+    ego_vehicle.set_autopilot(True, 8000)
+    traffic_manager.set_path(ego_vehicle, route)
     traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
     traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
-    traffic_manager.set_desired_speed(ego_vehicle, 40)
+    traffic_manager.set_desired_speed(ego_vehicle, 30)
 
 def set_red_light_time(world):
     actor_list = world.get_actors()
