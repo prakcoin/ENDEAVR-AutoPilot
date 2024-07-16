@@ -10,7 +10,8 @@ from utils.sensors import start_collision_sensor
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
 # Linux: ./CarlaUE4.sh -carla-server-timeout=10000ms -RenderOffScreen
-# todo: lane keep sensing, dynamic weather and town changing
+# Episode format: (Start point, Endpoint), Length, Route
+# Todo: lane keep sensing
 
 has_collision = False
 def collision_callback(data):
@@ -95,10 +96,14 @@ def main(args):
     world, client = init_world(args.town, args.weather)
     traffic_manager = setup_traffic_manager(client)
     route_configs = read_routes()
+    episode_count = min(len(route_configs), args.episodes)
 
+    restart = False
     episode = 0
-    while episode < args.episodes:
-        spawn_point, end_point, route = create_route(world, route_configs)
+    while episode < episode_count:
+        if not restart:
+            spawn_point, end_point, route = create_route(world, route_configs)
+        print(spawn_point)
         ego_vehicle = spawn_ego_vehicle(world, spawn_point)
         rgb_sensor = start_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
@@ -109,7 +114,10 @@ def main(args):
         run_episode(world, ego_vehicle, rgb_sensor, end_point, args.max_frames)
         if (has_collision):
             episode -= 1
+            restart = True
             print("Restarting ", end="")
+        else:
+            restart = False
         cleanup(ego_vehicle, rgb_sensor, collision_sensor)
         episode += 1
 
@@ -125,7 +133,7 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('-w', '--weather', type=str, default='ClearNoon', help='Weather condition to set')
     parser.add_argument('-f', '--max_frames', type=int, default=5000, help='Number of frames to collect per episode')
-    parser.add_argument('-e', '--episodes', type=int, default=5, help='Number of frames to collect per episode')
+    parser.add_argument('-e', '--episodes', type=int, default=25, help='Number of frames to collect per episode')
     args = parser.parse_args()
 
     main(args)

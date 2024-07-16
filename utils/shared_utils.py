@@ -22,8 +22,6 @@ def setup_traffic_manager(client):
     traffic_manager = client.get_trafficmanager(8000)
     traffic_manager.set_synchronous_mode(True)
     traffic_manager.set_global_distance_to_leading_vehicle(2.5)
-    # traffic_manager.set_hybrid_physics_mode(True)
-    # traffic_manager.set_hybrid_physics_radius(70.0)
     return traffic_manager
 
 def setup_vehicle_for_tm(traffic_manager, ego_vehicle, route):
@@ -42,6 +40,7 @@ def set_red_light_time(world):
 def create_route(world, episode_configs):
     spawn_points = world.get_map().get_spawn_points()
     episode_config = random.choice(episode_configs)
+    episode_configs.remove(episode_config)
     spawn_point = spawn_points[episode_config[0][0]]
     end_point = spawn_points[episode_config[0][1]]
     route = episode_config[2]
@@ -94,13 +93,6 @@ class CropCustom(object):
         bottom = int(height / 1.05)
         cropped_img = img.crop((0, top, width, bottom))
         return cropped_img
-    
-preprocess = v2.Compose([
-    CropCustom(),
-    v2.Resize((59, 128)),
-    v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)]),
-    v2.Normalize(mean=(0.4872, 0.4669, 0.4469,), std=(0.1138, 0.1115, 0.1074,)),
-])
 
 def load_model(model_path, device):
     model = AVModel()
@@ -110,6 +102,13 @@ def load_model(model_path, device):
     return model
 
 def model_control(sensor, model):
+    preprocess = v2.Compose([
+        CropCustom(),
+        v2.Resize((59, 128)),
+        v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)]),
+        v2.Normalize(mean=(0.4872, 0.4669, 0.4469,), std=(0.1138, 0.1115, 0.1074,)),
+    ])
+
     image = sensor.get_sensor_data()
     image_array = to_rgb(image)
     input_tensor = preprocess(image_array).unsqueeze(0)
