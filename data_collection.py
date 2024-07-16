@@ -1,62 +1,86 @@
 import argparse
 import queue
 import os
-from utils.shared_utils import init_world, setup_traffic_manager, setup_vehicle_for_tm, set_red_light_time, spawn_ego_vehicle, create_route, cleanup, update_spectator
-from utils.data_collection_utils import init_dirs_csv, queue_callback, start_camera, end_collection
+from utils.shared_utils import init_world, setup_traffic_manager, setup_vehicle_for_tm, spawn_ego_vehicle, create_route, to_rgb, cleanup, update_spectator, read_routes
+from utils.data_collection_utils import init_dirs_csv, queue_callback, start_camera
+from utils.sensors import start_collision_sensor
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
 # Linux: ./CarlaUE4.sh -carla-server-timeout=10000ms -RenderOffScreen
 
-def main(args):
-    world, client = init_world(args.town, args.weather)
-    traffic_manager = setup_traffic_manager(client)
-    set_red_light_time(world)
-    spawn_point, route = create_route(world)
+has_collision = False
+def collision_callback(data):
+    global has_collision
+    has_collision = True
 
-    image_queue = queue.Queue()
-    control_queue = queue.Queue()
+def end_reached(ego_vehicle, end_point):
+    vehicle_location = ego_vehicle.get_location()
+    end_location = end_point.location
 
-    run_dir, writer, csv_file  = init_dirs_csv(args.town, args.weather)
+    if end_location is None:
+        return False 
 
-    ego_vehicle = spawn_ego_vehicle(world, spawn_point)
-    camera = start_camera(world, ego_vehicle, callback=lambda image: queue_callback(image, image_queue, control_queue, ego_vehicle))
-    setup_vehicle_for_tm(traffic_manager, ego_vehicle, route)
+    distance = vehicle_location.distance(end_location)
+    return distance < 1.0
 
-    spectator = world.get_spectator()
+def end_episode(ego_vehicle, end_point, frame, max_frames):
+    done = False
+    if end_reached(ego_vehicle, end_point):
+        print("Target has been reached, episode ending")
+        done = True
+    elif frame >= max_frames:
+        print("Maximum frames reached, episode ending")
+        done = True
+    elif has_collision:
+        print.info("Collision detected, episode ending")
+        done = True
+    return done
+
+def run_episode(world, ego_vehicle, rgb_sensor, end_point, frames, spectator, writer, csv_file, run_dir):
+    global has_collision
+    has_collision = False
 
     for _ in range(10):
         world.tick()
 
-    data_vals = {"steering": 0, "running": 0}
-    running = True
-    while running:
+    frame = 0
+    while True:
         try:
-            world.tick()
-            update_spectator(spectator, ego_vehicle)
-            if not image_queue.empty() and not control_queue.empty():
-                image = image_queue.get()
-                control = control_queue.get()
-                steering_needed, running_needed = end_collection(data_vals, args.steer_frames, args.running_frames)
-                # print(control[1])
-                # print(control[1] > 0.0)
-                # print(-0.05 < control[0] < 0.05)
-                # print(running_needed)
-                if steering_needed and (control[0] > 0.05 or control[0] < -0.05):
-                    data_vals["steering"] += 1
-                    writer.writerow([control[0], control[1], control[2], image.frame])
-                    image.save_to_disk(os.path.join(run_dir, 'img', f'{image.frame}.png'))
-                elif running_needed and (-0.05 < control[0] < 0.05):
-                    data_vals["running"] += 1
-                    writer.writerow([control[0], control[1], control[2], image.frame])
-                    image.save_to_disk(os.path.join(run_dir, 'img', f'{image.frame}.png'))
+            if end_episode(ego_vehicle, end_point, frame, frames):
+                break
 
-                running = steering_needed or running_needed
+            update_spectator(spectator, ego_vehicle)
+            writer.writerow([ego_vehicle.get_control().steer, ego_vehicle.get_control().throttle, ego_vehicle.get_control().brake, frame])
+            sensor_data = to_rgb(rgb_sensor.get_sensor_data())
+            sensor_data.save_to_disk(os.path.join(run_dir, 'img', f'{frame}.png'))
+            world.tick()
+            frame += 1
+
         except KeyboardInterrupt:
             print("Simulation interrupted")
-            cleanup(ego_vehicle, camera, csv_file)
+            cleanup(ego_vehicle, rgb_sensor, csv_file)
 
     print("Simulation complete")
-    cleanup(ego_vehicle, camera, csv_file)
+
+def main(args):
+    world, client = init_world(args.town, args.weather)
+    traffic_manager = setup_traffic_manager(client)
+    route_configs = read_routes()
+
+    for episode in args.episodes:
+        spawn_point, end_point, route = create_route(world, route_configs)
+        run_dir, writer, csv_file  = init_dirs_csv(args.town, args.weather, args.episodes)
+
+        ego_vehicle = spawn_ego_vehicle(world, spawn_point)
+        rgb_sensor = start_camera(world, ego_vehicle)
+        collision_sensor = start_collision_sensor(world, ego_vehicle)
+        collision_sensor.listen(collision_callback)
+        setup_vehicle_for_tm(traffic_manager, ego_vehicle, route)
+        spectator = world.get_spectator()
+
+        print(f'Episode: {episode + 1}')
+        run_episode(world, ego_vehicle, rgb_sensor, end_point, args.frames, spectator, writer, csv_file, run_dir)
+        cleanup(ego_vehicle, rgb_sensor, csv_file)
 
 if __name__ == '__main__':
     towns = ['Town01', 'Town02', 'Town06']
@@ -68,8 +92,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
     parser.add_argument('-t', '--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('-w', '--weather', type=str, default='ClearNoon', help='Weather condition to set')
-    parser.add_argument('-sf', '--steer_frames', type=int, default=15000, help='Number of steering frames to collect per vehicle')
-    parser.add_argument('-rf', '--running_frames', type=int, default=35000, help='Number of running frames to collect per vehicle')
+    parser.add_argument('-f', '--frames', type=int, default=5000, help='Number of frames to collect per episode')
+    parser.add_argument('-e', '--episodes', type=int, default=5, help='Number of frames to collect per episode')
     args = parser.parse_args()
 
     main(args)

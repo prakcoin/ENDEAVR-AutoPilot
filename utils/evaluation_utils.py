@@ -2,6 +2,7 @@ import carla
 import torch
 import numpy as np
 from .sensors import RGBCamera
+from shared_utils import to_rgb
 from model.AVModel import AVModel
 from torchvision.transforms import v2
 
@@ -27,14 +28,6 @@ def load_model(model_path, device):
     model.to(device)
     model.eval()
     return model
-
-def to_rgb(image):
-    image_array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-    image_array = np.reshape(image_array, (image.height, image.width, 4))
-    image_array = image_array[:, :, :3]
-    image_array = image_array[:, :, ::-1]
-    image_array = image_array.copy()
-    return image_array
 
 def model_control(sensor, model):
     image = sensor.get_sensor_data()

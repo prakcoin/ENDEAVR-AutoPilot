@@ -1,5 +1,6 @@
 import carla
 import random
+import numpy as np
 
 def init_world(town, weather):
     client = carla.Client('localhost', 2000)
@@ -34,15 +35,13 @@ def set_red_light_time(world):
         if isinstance(actor_, carla.TrafficLight):
             actor_.set_red_time(1.0)
 
-def create_route(world, num_points=50):
+def create_route(world, episode_configs):
     spawn_points = world.get_map().get_spawn_points()
-    random.shuffle(spawn_points)
-    spawn_point = random.choice(spawn_points)
-    spawn_points.remove(spawn_point)
-    if len(spawn_points) >= num_points - 1:
-        spawn_points = random.sample(spawn_points, num_points)
-    route = [point.location for point in spawn_points]
-    return spawn_point, route
+    episode_config = random.choice(episode_configs)
+    spawn_point = spawn_points[episode_config[0][0]]
+    end_point = spawn_points[episode_config[0][1]]
+    route = episode_config[2]
+    return spawn_point, end_point, route
 
 def spawn_ego_vehicle(world, spawn_point):
     ego_bp = world.get_blueprint_library().find('vehicle.tesla.model3')
@@ -59,6 +58,20 @@ def update_spectator(spectator, vehicle):
         carla.Rotation(pitch=-90)
     )
     spectator.set_transform(spectator_transform)
+
+def to_rgb(image):
+    image_array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+    image_array = np.reshape(image_array, (image.height, image.width, 4))
+    image_array = image_array[:, :, :3]
+    image_array = image_array[:, :, ::-1]
+    image_array = image_array.copy()
+    return image_array
+
+def read_routes(filename='routes/Town01_All.txt'):
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+    routes = [((int(line.split()[0]), int(line.split()[1])), int(line.split()[2]), line.split()[3:]) for line in lines]
+    return routes
 
 def cleanup(ego_vehicle, camera, csv_file=None):
     if csv_file is not None:
