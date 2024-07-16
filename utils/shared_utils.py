@@ -31,7 +31,7 @@ def setup_vehicle_for_tm(traffic_manager, ego_vehicle, route):
     traffic_manager.set_route(ego_vehicle, route)
     traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
     traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
-    traffic_manager.set_desired_speed(ego_vehicle, 30)
+    traffic_manager.set_desired_speed(ego_vehicle, 45)
 
 def set_red_light_time(world):
     actor_list = world.get_actors()

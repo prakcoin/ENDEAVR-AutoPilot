@@ -5,7 +5,7 @@ import h5py
 import matplotlib.pyplot as plt
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
                                 spawn_ego_vehicle,  start_camera, create_route, to_rgb, 
-                                cleanup, update_spectator, read_routes)
+                                cleanup, update_spectator, read_routes, CropCustom)
 from utils.sensors import start_collision_sensor
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
@@ -39,7 +39,7 @@ def end_episode(ego_vehicle, end_point, frame, max_frames):
         done = True
     return done
 
-def run_episode(world, ego_vehicle, rgb_sensor, end_point, max_frames, spectator, episode):
+def run_episode(world, ego_vehicle, rgb_sensor, end_point, max_frames):
     global has_collision
     has_collision = False
 
@@ -48,6 +48,7 @@ def run_episode(world, ego_vehicle, rgb_sensor, end_point, max_frames, spectator
         'controls': [],
     }
 
+    spectator = world.get_spectator()
     for _ in range(10):
         world.tick()
 
@@ -58,6 +59,7 @@ def run_episode(world, ego_vehicle, rgb_sensor, end_point, max_frames, spectator
 
         update_spectator(spectator, ego_vehicle)
         sensor_data = to_rgb(rgb_sensor.get_sensor_data())
+        sensor_data = CropCustom()(sensor_data)
 
         frame_data = {
             'image': sensor_data,
@@ -70,11 +72,20 @@ def run_episode(world, ego_vehicle, rgb_sensor, end_point, max_frames, spectator
         frame += 1
 
     if not has_collision and frame <= max_frames:
-        if not os.path.exists('data'):
-            os.makedirs('data')
-        with h5py.File(f'data/episode_{episode + 1}.h5', 'w') as file:
-            for key, data_array in episode_data.items():
-                file.create_dataset(key, data=data_array)
+        if not os.path.isfile(f'data.h5'):
+            with h5py.File(f'data.h5', 'w') as file:
+                for key, data_array in episode_data.items():
+                    file.create_dataset(key, data=data_array)
+        else:
+            with h5py.File(f'data.h5', 'r') as file:
+                for key, data_array in episode_data.items():
+                    file[key].extend(data_array)
+
+        # if not os.path.exists('data'):
+        #     os.makedirs('data')
+        # with h5py.File(f'data/episode_{episode + 1}.h5', 'w') as file:
+        #     for key, data_array in episode_data.items():
+        #         file.create_dataset(key, data=data_array)
 
 def main(args):
     world, client = init_world(args.town, args.weather)
@@ -88,10 +99,9 @@ def main(args):
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
         setup_vehicle_for_tm(traffic_manager, ego_vehicle, route)
-        spectator = world.get_spectator()
 
         print(f'Episode: {episode + 1}')
-        run_episode(world, ego_vehicle, rgb_sensor, end_point, args.frames, spectator, episode)
+        run_episode(world, ego_vehicle, rgb_sensor, end_point, args.frames)
         cleanup(ego_vehicle, rgb_sensor, collision_sensor)
 
     print("Simulation complete")
