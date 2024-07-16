@@ -2,7 +2,6 @@ import carla
 import random
 import numpy as np
 import torch
-from .sensors import RGBCamera
 from model.AVModel import AVModel
 from torchvision.transforms import v2
 
@@ -29,7 +28,7 @@ def setup_vehicle_for_tm(traffic_manager, ego_vehicle, route):
     traffic_manager.set_route(ego_vehicle, route)
     traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
     traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
-    traffic_manager.set_desired_speed(ego_vehicle, 45)
+    traffic_manager.set_desired_speed(ego_vehicle, 30)
 
 def set_red_light_time(world):
     actor_list = world.get_actors()
@@ -53,10 +52,6 @@ def spawn_ego_vehicle(world, spawn_point):
     ego_bp.set_attribute('color', ego_color)
     ego_vehicle = world.spawn_actor(ego_bp, spawn_point)
     return ego_vehicle
-
-def start_camera(world, vehicle):
-    rgb_cam = RGBCamera(world, vehicle, size_x='224', size_y='224')
-    return rgb_cam
 
 def update_spectator(spectator, vehicle):
     ego_transform = vehicle.get_transform()

@@ -4,19 +4,23 @@ import numpy as np
 import h5py
 import matplotlib.pyplot as plt
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
-                                spawn_ego_vehicle,  start_camera, create_route, to_rgb, 
+                                spawn_ego_vehicle, create_route, to_rgb, 
                                 cleanup, update_spectator, read_routes, CropCustom)
-from utils.sensors import start_collision_sensor
+from utils.sensors import start_camera, start_collision_sensor, start_lane_invasion_sensor
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
 # Linux: ./CarlaUE4.sh -carla-server-timeout=10000ms -RenderOffScreen
 # Episode format: (Start point, Endpoint), Length, Route
-# Todo: lane keep sensing
 
 has_collision = False
 def collision_callback(data):
     global has_collision
     has_collision = True
+
+has_lane_invasion = False
+def lane_invasion_callback(data):
+    global has_lane_invasion
+    has_lane_invasion = True
 
 def end_reached(ego_vehicle, end_point):
     vehicle_location = ego_vehicle.get_location()
@@ -31,13 +35,16 @@ def end_reached(ego_vehicle, end_point):
 def end_episode(ego_vehicle, end_point, frame, max_frames):
     done = False
     if end_reached(ego_vehicle, end_point):
-        print("Target has been reached, episode ending")
+        print("Target reached, episode ending")
         done = True
     elif frame >= max_frames:
         print("Maximum frames reached, episode ending")
         done = True
     elif has_collision:
         print("Collision detected, episode ending")
+        done = True
+    elif has_lane_invasion:
+        print("Lane invasion detected, episode ending")
         done = True
     return done
 
@@ -60,6 +67,8 @@ def update_data_file(episode_data):
 def run_episode(world, ego_vehicle, rgb_sensor, end_point, max_frames):
     global has_collision
     has_collision = False
+    global has_lane_invasion
+    has_lane_invasion = False
 
     episode_data = {
         'image': [],
@@ -89,7 +98,7 @@ def run_episode(world, ego_vehicle, rgb_sensor, end_point, max_frames):
         world.tick()
         frame += 1
 
-    if not has_collision and frame <= max_frames:
+    if not has_collision and not has_lane_invasion and frame <= max_frames:
         update_data_file(episode_data)
 
 def main(args):
@@ -103,16 +112,17 @@ def main(args):
     while episode < episode_count:
         if not restart:
             spawn_point, end_point, route = create_route(world, route_configs)
-        print(spawn_point)
         ego_vehicle = spawn_ego_vehicle(world, spawn_point)
         rgb_sensor = start_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
+        lane_invasion_sensor = start_lane_invasion_sensor(world, ego_vehicle)
+        lane_invasion_sensor.listen(lane_invasion_callback)
         setup_vehicle_for_tm(traffic_manager, ego_vehicle, route)
 
         print(f'Episode: {episode + 1}')
         run_episode(world, ego_vehicle, rgb_sensor, end_point, args.max_frames)
-        if (has_collision):
+        if (has_collision or has_lane_invasion):
             episode -= 1
             restart = True
             print("Restarting ", end="")
@@ -133,7 +143,7 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('-w', '--weather', type=str, default='ClearNoon', help='Weather condition to set')
     parser.add_argument('-f', '--max_frames', type=int, default=5000, help='Number of frames to collect per episode')
-    parser.add_argument('-e', '--episodes', type=int, default=25, help='Number of frames to collect per episode')
+    parser.add_argument('-e', '--episodes', type=int, default=20, help='Number of frames to collect per episode')
     args = parser.parse_args()
 
     main(args)

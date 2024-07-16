@@ -20,8 +20,18 @@ class RGBCamera:
     def get_sensor(self):
         return self._sensor
     
+def start_camera(world, vehicle):
+    rgb_cam = RGBCamera(world, vehicle, size_x='224', size_y='224')
+    return rgb_cam
+
 def start_collision_sensor(world, vehicle):
     bp = world.get_blueprint_library().find('sensor.other.collision')
+    transform = carla.Transform(carla.Location(x=2.5, z=0.7))
+    sensor = world.spawn_actor(bp, transform, attach_to=vehicle)
+    return sensor
+
+def start_lane_invasion_sensor(world, vehicle):
+    bp = world.get_blueprint_library().find('sensor.other.lane_invasion')
     transform = carla.Transform(carla.Location(x=2.5, z=0.7))
     sensor = world.spawn_actor(bp, transform, attach_to=vehicle)
     return sensor
