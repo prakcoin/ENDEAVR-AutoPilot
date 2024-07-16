@@ -10,6 +10,7 @@ from utils.sensors import start_collision_sensor
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
 # Linux: ./CarlaUE4.sh -carla-server-timeout=10000ms -RenderOffScreen
+# todo: lane keep sensing, dynamic weather and town changing
 
 has_collision = False
 def collision_callback(data):
@@ -43,10 +44,12 @@ def update_data_file(episode_data):
     if not os.path.isfile(f'data.h5'):
             with h5py.File(f'data.h5', 'w') as file:
                 for key, data_array in episode_data.items():
+                    data_array = np.array(data_array)
                     file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
     else:
         with h5py.File(f'data.h5', 'a') as file:
             for key, data_array in episode_data.items():
+                data_array = np.array(data_array)
                 data_length = len(data_array)
                 old_size = file[key].shape[0]
                 new_size = old_size + data_length
@@ -76,7 +79,7 @@ def run_episode(world, ego_vehicle, rgb_sensor, end_point, max_frames):
         sensor_data = CropCustom()(sensor_data)
 
         frame_data = {
-            'image': sensor_data,
+            'image': np.array(sensor_data),
             'controls': np.array([ego_vehicle.get_control().steer, ego_vehicle.get_control().throttle, ego_vehicle.get_control().brake]),
         }
         for key, value in frame_data.items():
@@ -87,18 +90,14 @@ def run_episode(world, ego_vehicle, rgb_sensor, end_point, max_frames):
 
     if not has_collision and frame <= max_frames:
         update_data_file(episode_data)
-        # if not os.path.exists('data'):
-        #     os.makedirs('data')
-        # with h5py.File(f'data/episode_{episode + 1}.h5', 'w') as file:
-        #     for key, data_array in episode_data.items():
-        #         file.create_dataset(key, data=data_array)
 
 def main(args):
     world, client = init_world(args.town, args.weather)
     traffic_manager = setup_traffic_manager(client)
     route_configs = read_routes()
 
-    for episode in range(args.episodes):
+    episode = 0
+    while episode < args.episodes:
         spawn_point, end_point, route = create_route(world, route_configs)
         ego_vehicle = spawn_ego_vehicle(world, spawn_point)
         rgb_sensor = start_camera(world, ego_vehicle)
@@ -108,7 +107,11 @@ def main(args):
 
         print(f'Episode: {episode + 1}')
         run_episode(world, ego_vehicle, rgb_sensor, end_point, args.max_frames)
+        if (has_collision):
+            episode -= 1
+            print("Restarting ", end="")
         cleanup(ego_vehicle, rgb_sensor, collision_sensor)
+        episode += 1
 
     print("Simulation complete")
 

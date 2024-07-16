@@ -88,6 +88,7 @@ def cleanup(ego_vehicle, rgb_sensor, collision_sensor):
 
 class CropCustom(object):
     def __call__(self, img):
+        img = v2.ToPILImage()(img)
         width, height = img.size
         top = int(height / 2.05)
         bottom = int(height / 1.05)
@@ -95,7 +96,6 @@ class CropCustom(object):
         return cropped_img
     
 preprocess = v2.Compose([
-    v2.ToPILImage(),
     CropCustom(),
     v2.Resize((59, 128)),
     v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)]),
