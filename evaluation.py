@@ -1,8 +1,10 @@
 import os
 import argparse
 import torch
-from utils.shared_utils import init_world, create_route, set_red_light_time, spawn_ego_vehicle, setup_traffic_manager, cleanup, update_spectator
-from utils.evaluation_utils import start_camera, model_control, load_model
+from utils.shared_utils import (init_world, create_route, set_red_light_time, 
+                                spawn_ego_vehicle, setup_traffic_manager, 
+                                cleanup, update_spectator, start_camera, 
+                                model_control, load_model)
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
 # Linux: ./CarlaUE4.sh -carla-server-timeout=10000ms -RenderOffScreen
