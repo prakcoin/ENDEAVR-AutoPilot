@@ -39,6 +39,20 @@ def end_episode(ego_vehicle, end_point, frame, max_frames):
         done = True
     return done
 
+def update_data_file(episode_data):
+    if not os.path.isfile(f'data.h5'):
+            with h5py.File(f'data.h5', 'w') as file:
+                for key, data_array in episode_data.items():
+                    file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
+    else:
+        with h5py.File(f'data.h5', 'a') as file:
+            for key, data_array in episode_data.items():
+                data_length = len(data_array)
+                old_size = file[key].shape[0]
+                new_size = old_size + data_length
+                file[key].resize(new_size, axis=0)
+                file[key][old_size:new_size] = data_array
+
 def run_episode(world, ego_vehicle, rgb_sensor, end_point, max_frames):
     global has_collision
     has_collision = False
@@ -72,15 +86,7 @@ def run_episode(world, ego_vehicle, rgb_sensor, end_point, max_frames):
         frame += 1
 
     if not has_collision and frame <= max_frames:
-        if not os.path.isfile(f'data.h5'):
-            with h5py.File(f'data.h5', 'w') as file:
-                for key, data_array in episode_data.items():
-                    file.create_dataset(key, data=data_array)
-        else:
-            with h5py.File(f'data.h5', 'r') as file:
-                for key, data_array in episode_data.items():
-                    file[key].extend(data_array)
-
+        update_data_file(episode_data)
         # if not os.path.exists('data'):
         #     os.makedirs('data')
         # with h5py.File(f'data/episode_{episode + 1}.h5', 'w') as file:
@@ -101,7 +107,7 @@ def main(args):
         setup_vehicle_for_tm(traffic_manager, ego_vehicle, route)
 
         print(f'Episode: {episode + 1}')
-        run_episode(world, ego_vehicle, rgb_sensor, end_point, args.frames)
+        run_episode(world, ego_vehicle, rgb_sensor, end_point, args.max_frames)
         cleanup(ego_vehicle, rgb_sensor, collision_sensor)
 
     print("Simulation complete")
@@ -115,7 +121,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
     parser.add_argument('-t', '--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('-w', '--weather', type=str, default='ClearNoon', help='Weather condition to set')
-    parser.add_argument('-f', '--frames', type=int, default=5000, help='Number of frames to collect per episode')
+    parser.add_argument('-f', '--max_frames', type=int, default=5000, help='Number of frames to collect per episode')
     parser.add_argument('-e', '--episodes', type=int, default=5, help='Number of frames to collect per episode')
     args = parser.parse_args()
 
