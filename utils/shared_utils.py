@@ -24,7 +24,7 @@ def setup_traffic_manager(client):
 
 def setup_vehicle_for_tm(traffic_manager, ego_vehicle, route):
     ego_vehicle.set_autopilot(True, 8000)
-    traffic_manager.set_path(ego_vehicle, route)
+    traffic_manager.set_route(ego_vehicle, route)
     traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
     traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
     traffic_manager.set_desired_speed(ego_vehicle, 30)

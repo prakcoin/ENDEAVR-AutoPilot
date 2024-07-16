@@ -2,7 +2,7 @@ import argparse
 import queue
 import os
 from utils.shared_utils import init_world, setup_traffic_manager, setup_vehicle_for_tm, spawn_ego_vehicle, create_route, to_rgb, cleanup, update_spectator, read_routes
-from utils.data_collection_utils import init_dirs_csv, queue_callback, start_camera
+from utils.data_collection_utils import init_dirs_csv, start_camera
 from utils.sensors import start_collision_sensor
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
@@ -67,9 +67,9 @@ def main(args):
     traffic_manager = setup_traffic_manager(client)
     route_configs = read_routes()
 
-    for episode in args.episodes:
+    for episode in range(args.episodes):
         spawn_point, end_point, route = create_route(world, route_configs)
-        run_dir, writer, csv_file  = init_dirs_csv(args.town, args.weather, args.episodes)
+        run_dir, writer, csv_file  = init_dirs_csv(args.town, args.weather, episode)
 
         ego_vehicle = spawn_ego_vehicle(world, spawn_point)
         rgb_sensor = start_camera(world, ego_vehicle)
