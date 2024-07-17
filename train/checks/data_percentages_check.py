@@ -8,12 +8,11 @@ def calculate_data_percentages(h5_file):
     running_frames = 0
 
     with h5py.File(h5_file, 'r') as f:
-        # Ensure the HDF5 file contains the required dataset
         if 'controls' not in f:
             print("The HDF5 file does not contain 'controls' dataset.")
             return 0, 0
 
-        controls = f['controls']  # Assuming controls is an array of [steering_angle, throttle, brake]
+        controls = f['controls']
 
         for row in controls:
             steer_value = float(row[0])
@@ -35,7 +34,6 @@ def calculate_data_percentages(h5_file):
 
     return steering_frames, running_frames, braking_frames, stopping_frames, total_frames
 
-# Path to your HDF5 file
 h5_file_path = '/mnt/c/Users/User/Documents/AV Research/data.h5'
 steering_frames, running_frames, braking_frames, stopping_frames, total_frames = calculate_data_percentages(h5_file_path)
 

@@ -3,15 +3,13 @@ import h5py
 
 def play_frames_as_video(h5_file):
     with h5py.File(h5_file, 'r') as f:
-        # Ensure the HDF5 file contains the required datasets
         if 'image' not in f or 'controls' not in f:
             print("The HDF5 file does not contain 'images' or 'controls' datasets.")
             return
         
         images = f['image']
-        controls = f['controls']  # Assuming controls is an array of [steering_angle, throttle, brake]
+        controls = f['controls']
 
-        # Ensure both datasets have the same number of frames
         num_frames = len(images)
         if num_frames != len(controls):
             print("The number of frames in 'image' and 'controls' datasets do not match.")
@@ -21,11 +19,10 @@ def play_frames_as_video(h5_file):
         frame_index = 0
 
         while frame_index < num_frames:
-            frame = images[frame_index]  # Assuming images are stored as NumPy arrays
+            frame = images[frame_index] 
 
-            # Ensure the image is in the correct format for OpenCV
-            if frame.ndim == 3 and frame.shape[2] == 3:  # Check if the image has 3 channels
-                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)  # Convert RGB to BGR for OpenCV
+            if frame.ndim == 3 and frame.shape[2] == 3: 
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
             steering_angle, throttle, brake = controls[frame_index]
 
@@ -56,6 +53,5 @@ def play_frames_as_video(h5_file):
 
         cv2.destroyAllWindows()
 
-# Path to your HDF5 file
 h5_file_path = '/mnt/c/Users/User/Documents/AV Research/data.h5'
 play_frames_as_video(h5_file_path)
