@@ -5,7 +5,7 @@ import torch
 from model.AVModel import AVModel
 from torchvision.transforms import v2
 
-def init_world(town, weather):
+def init_world(town):
     client = carla.Client('localhost', 2000)
     client.set_timeout(20.0)
     world = client.get_world()
@@ -14,7 +14,6 @@ def init_world(town, weather):
     settings.fixed_delta_seconds = 0.05
     world.apply_settings(settings)
     client.load_world(town)
-    world.set_weather(getattr(carla.WeatherParameters, weather))
     return world, client
 
 def setup_traffic_manager(client):

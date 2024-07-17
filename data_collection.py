@@ -2,7 +2,7 @@ import argparse
 import os
 import numpy as np
 import h5py
-import matplotlib.pyplot as plt
+import carla
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
                                 spawn_ego_vehicle, create_route, to_rgb, 
                                 cleanup, update_spectator, read_routes, CropCustom)
@@ -102,46 +102,48 @@ def run_episode(world, ego_vehicle, rgb_sensor, end_point, max_frames):
         update_data_file(episode_data)
 
 def main(args):
-    world, client = init_world(args.town, args.weather)
+    weather_conditions = ['ClearNoon', 'WetNoon', 'SoftRainNoon', 'MidRainyNoon', 'HardRainNoon']
+
+    world, client = init_world(args.town)
     traffic_manager = setup_traffic_manager(client)
-    route_configs = read_routes()
-    episode_count = min(len(route_configs), args.episodes)
 
-    restart = False
-    episode = 0
-    while episode < episode_count:
-        if not restart:
-            spawn_point, end_point, route = create_route(world, route_configs)
-        ego_vehicle = spawn_ego_vehicle(world, spawn_point)
-        rgb_sensor = start_camera(world, ego_vehicle)
-        collision_sensor = start_collision_sensor(world, ego_vehicle)
-        collision_sensor.listen(collision_callback)
-        lane_invasion_sensor = start_lane_invasion_sensor(world, ego_vehicle)
-        lane_invasion_sensor.listen(lane_invasion_callback)
-        setup_vehicle_for_tm(traffic_manager, ego_vehicle, route)
+    for weather in weather_conditions:
+        print("Current weather:", weather)
+        world.set_weather(getattr(carla.WeatherParameters, weather))
+        route_configs = read_routes()
+        episode_count = min(len(route_configs), args.episodes)
 
-        print(f'Episode: {episode + 1}')
-        run_episode(world, ego_vehicle, rgb_sensor, end_point, args.max_frames)
-        if (has_collision or has_lane_invasion):
-            episode -= 1
-            restart = True
-            print("Restarting ", end="")
-        else:
-            restart = False
-        cleanup(ego_vehicle, rgb_sensor, collision_sensor)
-        episode += 1
+        restart = False
+        episode = 0
+        while episode < episode_count:
+            if not restart:
+                spawn_point, end_point, route = create_route(world, route_configs)
+            ego_vehicle = spawn_ego_vehicle(world, spawn_point)
+            rgb_sensor = start_camera(world, ego_vehicle)
+            collision_sensor = start_collision_sensor(world, ego_vehicle)
+            collision_sensor.listen(collision_callback)
+            lane_invasion_sensor = start_lane_invasion_sensor(world, ego_vehicle)
+            lane_invasion_sensor.listen(lane_invasion_callback)
+            setup_vehicle_for_tm(traffic_manager, ego_vehicle, route)
+
+            print(f'Episode: {episode + 1}')
+            run_episode(world, ego_vehicle, rgb_sensor, end_point, args.max_frames)
+            if (has_collision or has_lane_invasion):
+                episode -= 1
+                restart = True
+                print("Restarting ", end="")
+            else:
+                restart = False
+            cleanup(ego_vehicle, rgb_sensor, collision_sensor)
+            episode += 1
 
     print("Simulation complete")
 
 if __name__ == '__main__':
     towns = ['Town01', 'Town02', 'Town06']
-    weather_conditions = ['ClearNoon', 'ClearSunset', 'ClearNight', 'CloudyNoon', 'CloudyNight', 'WetNoon', 
-                        'WetSunset', 'WetNight', 'SoftRainNoon', 'SoftRainSunset', 'SoftRainNight', 
-                        'MidRainyNoon', 'MidRainSunset', 'MidRainyNight', 'HardRainNoon']
-
+    
     parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
     parser.add_argument('-t', '--town', type=str, default='Town01', help='CARLA town to use')
-    parser.add_argument('-w', '--weather', type=str, default='ClearNoon', help='Weather condition to set')
     parser.add_argument('-f', '--max_frames', type=int, default=5000, help='Number of frames to collect per episode')
     parser.add_argument('-e', '--episodes', type=int, default=20, help='Number of frames to collect per episode')
     args = parser.parse_args()
