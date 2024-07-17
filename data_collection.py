@@ -134,7 +134,7 @@ def main(args):
                 print("Restarting ", end="")
             else:
                 restart = False
-            cleanup(ego_vehicle, rgb_sensor, collision_sensor)
+            cleanup(ego_vehicle, rgb_sensor, collision_sensor, lane_invasion_sensor)
             episode += 1
 
     print("Simulation complete")
@@ -143,9 +143,9 @@ if __name__ == '__main__':
     towns = ['Town01', 'Town02', 'Town06']
     
     parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
-    parser.add_argument('-t', '--town', type=str, default='Town01', help='CARLA town to use')
+    parser.add_argument('-t', '--town', type=str, default='Town02', help='CARLA town to use')
     parser.add_argument('-f', '--max_frames', type=int, default=5000, help='Number of frames to collect per episode')
-    parser.add_argument('-e', '--episodes', type=int, default=20, help='Number of frames to collect per episode')
+    parser.add_argument('-e', '--episodes', type=int, default=4, help='Number of episodes to collect data for')
     args = parser.parse_args()
 
     main(args)

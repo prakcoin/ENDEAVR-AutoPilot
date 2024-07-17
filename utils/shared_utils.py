@@ -68,14 +68,15 @@ def to_rgb(image):
     image_array = image_array.copy()
     return image_array
 
-def read_routes(filename='routes/Town01_All.txt'):
+def read_routes(filename='routes/Town02_All.txt'):
     with open(filename, 'r') as f:
         lines = f.readlines()
     routes = [((int(line.split()[0]), int(line.split()[1])), int(line.split()[2]), line.split()[3:]) for line in lines]
     return routes
 
-def cleanup(ego_vehicle, rgb_sensor, collision_sensor):
+def cleanup(ego_vehicle, rgb_sensor, collision_sensor, lane_invasion_sensor):
     collision_sensor.destroy()
+    lane_invasion_sensor.destroy()
     ego_vehicle.destroy()
     rgb_sensor.get_sensor().destroy()
 
