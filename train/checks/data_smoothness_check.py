@@ -1,40 +1,35 @@
 import cv2
-import os
-import re
-import pandas as pd
+import h5py
 
-def sorted_nicely(l):
-    convert = lambda text: int(text) if text.isdigit() else text.lower()
-    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
-    return sorted(l, key=alphanum_key)
-
-def play_frames_as_video(img_directory, csv_file):
-    image_files = [file for file in os.listdir(img_directory) if file.endswith('.jpg') or file.endswith('.png')]
-    image_files = sorted_nicely(image_files)
-    
-    if not image_files:
-        print(f"No image files found in directory: {img_directory}")
-        return
-    
-    df = pd.read_csv(csv_file, header=None, names=['steering_angle', 'throttle', 'brake', 'frame'])
-    df.set_index('frame', inplace=True)  # Set the frame column as the index for easy lookup
-
-    playback_speed = 1
-    frame_index = 0
-
-    while frame_index < len(image_files):
-        image_file = image_files[frame_index]
-        frame_number = int(re.search(r'\d+', image_file).group())
+def play_frames_as_video(h5_file):
+    with h5py.File(h5_file, 'r') as f:
+        # Ensure the HDF5 file contains the required datasets
+        if 'image' not in f or 'controls' not in f:
+            print("The HDF5 file does not contain 'images' or 'controls' datasets.")
+            return
         
-        if frame_number in df.index:
-            steering_angle = df.at[frame_number, 'steering_angle']
-            throttle = df.at[frame_number, 'throttle']
-            brake = df.at[frame_number, 'brake']
+        images = f['image']
+        controls = f['controls']  # Assuming controls is an array of [steering_angle, throttle, brake]
 
-            image_path = os.path.join(img_directory, image_file)
-            frame = cv2.imread(image_path)
+        # Ensure both datasets have the same number of frames
+        num_frames = len(images)
+        if num_frames != len(controls):
+            print("The number of frames in 'image' and 'controls' datasets do not match.")
+            return
 
-            text = f"Frame: {frame_number}, Steering Angle: {steering_angle:.2f}, Throttle: {throttle:.2f}, Brake: {brake:.2f}"
+        playback_speed = 1
+        frame_index = 0
+
+        while frame_index < num_frames:
+            frame = images[frame_index]  # Assuming images are stored as NumPy arrays
+
+            # Ensure the image is in the correct format for OpenCV
+            if frame.ndim == 3 and frame.shape[2] == 3:  # Check if the image has 3 channels
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)  # Convert RGB to BGR for OpenCV
+
+            steering_angle, throttle, brake = controls[frame_index]
+
+            text = f"Frame: {frame_index}, Steering Angle: {steering_angle:.2f}, Throttle: {throttle:.2f}, Brake: {brake:.2f}"
             font_scale = 0.4
             font_thickness = 1
             y0, dy = 20, 15
@@ -45,7 +40,7 @@ def play_frames_as_video(img_directory, csv_file):
             cv2.imshow('Frame', frame)
 
             key = cv2.waitKey(30 // playback_speed)
-            
+
             if key & 0xFF == ord('q'):  # Exit
                 break
             elif key & 0xFF == ord('c'):  # Increase speed
@@ -53,14 +48,14 @@ def play_frames_as_video(img_directory, csv_file):
             elif key & 0xFF == ord('x'):  # Decrease speed
                 playback_speed = max(playback_speed - 1, 1)
             elif key & 0xFF == ord('s'):  # Skip forward
-                frame_index = min(frame_index + 10, len(image_files) - 1)
+                frame_index = min(frame_index + 10, num_frames - 1)
             elif key & 0xFF == ord('a'):  # Skip back
                 frame_index = max(frame_index - 10, 0)
             else:
                 frame_index += 1
 
-    cv2.destroyAllWindows()
+        cv2.destroyAllWindows()
 
-img_directory_path = 'C:\\Users\\User\\Documents\\AV Research\\Data\\Training Data\\DownsampleTesting\\Town01_ClearNoon\\img'
-csv_file_path = 'C:\\Users\\User\\Documents\\AV Research\\Data\\Training Data\\DownsampleTesting\\Town01_ClearNoon\\csv\\filtered_data.csv'
-play_frames_as_video(img_directory_path, csv_file_path)
+# Path to your HDF5 file
+h5_file_path = '/mnt/c/Users/User/Documents/AV Research/data.h5'
+play_frames_as_video(h5_file_path)
