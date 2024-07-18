@@ -62,6 +62,26 @@ def update_spectator(spectator, vehicle):
     )
     spectator.set_transform(spectator_transform)
 
+def road_option_to_int(high_level_command):
+    """convert CARLA.RoadOptions to integer"""
+    road_option_dict = {
+        "LaneFollow": 0,
+        "Left": 1,
+        "Right": 2,
+        "Straight": 3
+    }
+    return road_option_dict[high_level_command]
+
+def int_to_road_option(high_level_command):
+    """convert integer high-level command to Carla.RoadOptions"""
+    road_option_dict = {
+        0: "LaneFollow",
+        1: "Left",
+        2: "Right",
+        3: "Straight"
+    }
+    return road_option_dict[high_level_command]
+
 def to_rgb(image):
     image_array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
     image_array = np.reshape(image_array, (image.height, image.width, 4))

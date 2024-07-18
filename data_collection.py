@@ -4,7 +4,7 @@ import numpy as np
 import h5py
 import carla
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
-                                spawn_ego_vehicle, create_route, to_rgb, 
+                                spawn_ego_vehicle, create_route, to_rgb, road_option_to_int,
                                 cleanup, update_spectator, read_routes, CropCustom)
 from utils.sensors import start_camera, start_collision_sensor, start_lane_invasion_sensor
 
@@ -64,7 +64,7 @@ def update_data_file(episode_data):
                 file[key].resize(new_size, axis=0)
                 file[key][old_size:new_size] = data_array
 
-def run_episode(world, ego_vehicle, rgb_sensor, end_point, max_frames):
+def run_episode(world, traffic_manager, ego_vehicle, rgb_sensor, end_point, max_frames):
     global has_collision
     has_collision = False
     global has_lane_invasion
@@ -73,6 +73,7 @@ def run_episode(world, ego_vehicle, rgb_sensor, end_point, max_frames):
     episode_data = {
         'image': [],
         'controls': [],
+        'hlc': [],
     }
 
     spectator = world.get_spectator()
@@ -91,6 +92,7 @@ def run_episode(world, ego_vehicle, rgb_sensor, end_point, max_frames):
         frame_data = {
             'image': np.array(sensor_data),
             'controls': np.array([ego_vehicle.get_control().steer, ego_vehicle.get_control().throttle, ego_vehicle.get_control().brake]),
+            'hlc': np.array(road_option_to_int([traffic_manager.get_next_action(ego_vehicle)[0]]))
         }
         for key, value in frame_data.items():
             episode_data[key].append(value)
@@ -127,7 +129,7 @@ def main(args):
             setup_vehicle_for_tm(traffic_manager, ego_vehicle, route)
 
             print(f'Episode: {episode + 1}')
-            run_episode(world, ego_vehicle, rgb_sensor, end_point, args.max_frames)
+            run_episode(world, traffic_manager, ego_vehicle, rgb_sensor, end_point, args.max_frames)
             if (has_collision or has_lane_invasion):
                 episode -= 1
                 restart = True
@@ -140,8 +142,6 @@ def main(args):
     print("Simulation complete")
 
 if __name__ == '__main__':
-    towns = ['Town01', 'Town02', 'Town06']
-    
     parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
     parser.add_argument('-t', '--town', type=str, default='Town02', help='CARLA town to use')
     parser.add_argument('-f', '--max_frames', type=int, default=5000, help='Number of frames to collect per episode')
