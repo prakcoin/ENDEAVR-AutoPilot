@@ -1,6 +1,7 @@
 import os
 import argparse
 import torch
+import carla
 from utils.sensors import start_camera, start_collision_sensor, start_lane_invasion_sensor
 from utils.shared_utils import (init_world, read_routes, create_route,
                                 spawn_ego_vehicle, setup_traffic_manager, 
@@ -87,8 +88,9 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_model(model_path, device)
 
-    world, client = init_world(args.town, args.weather)
+    world, client = init_world(args.town)
     traffic_manager = setup_traffic_manager(client)
+    world.set_weather(getattr(carla.WeatherParameters, args.weather))
     route_configs = read_routes('routes/Town02_Test.txt')
     episode_count = min(len(route_configs), args.episodes)
     completed_episodes = 0
