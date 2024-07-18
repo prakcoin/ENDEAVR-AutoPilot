@@ -39,10 +39,12 @@ def create_route(world, episode_configs):
     spawn_points = world.get_map().get_spawn_points()
     episode_config = random.choice(episode_configs)
     episode_configs.remove(episode_config)
+    print(f"Route from spawn point #{episode_config[0][0]} to #{episode_config[0][1]}")
     spawn_point = spawn_points[episode_config[0][0]]
     end_point = spawn_points[episode_config[0][1]]
+    route_length = episode_config[1]
     route = episode_config[2]
-    return spawn_point, end_point, route
+    return spawn_point, end_point, route_length, route
 
 def spawn_ego_vehicle(world, spawn_point):
     ego_bp = world.get_blueprint_library().find('vehicle.tesla.model3')
@@ -68,7 +70,7 @@ def to_rgb(image):
     image_array = image_array.copy()
     return image_array
 
-def read_routes(filename='routes/Town02_All.txt'):
+def read_routes(filename):
     with open(filename, 'r') as f:
         lines = f.readlines()
     routes = [((int(line.split()[0]), int(line.split()[1])), int(line.split()[2]), line.split()[3:]) for line in lines]
@@ -96,23 +98,12 @@ def load_model(model_path, device):
     model.eval()
     return model
 
-def model_control(sensor, model):
+def model_control(image, model):
     preprocess = v2.Compose([
-        CropCustom(),
-        v2.Resize((59, 128)),
         v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)]),
-        v2.Normalize(mean=(0.4872, 0.4669, 0.4469,), std=(0.1138, 0.1115, 0.1074,)),
+        v2.Normalize(mean=(0.6651, 0.6439, 0.6236,), std=(0.1352, 0.1353, 0.1364,)),
     ])
-
-    image = sensor.get_sensor_data()
-    image_array = to_rgb(image)
-    input_tensor = preprocess(image_array).unsqueeze(0)
-
-    #after_tensor = preprocess(array)
-    #plt.imshow(after_tensor.permute(1, 2, 0))
-    #plt.title('After Norm Image Tensor')
-    #plt.axis('off')
-    #plt.show()
+    input_tensor = preprocess(image).unsqueeze(0)
 
     with torch.no_grad():
         output = model(input_tensor)

@@ -110,14 +110,14 @@ def main(args):
     for weather in weather_conditions:
         print("Current weather:", weather)
         world.set_weather(getattr(carla.WeatherParameters, weather))
-        route_configs = read_routes()
+        route_configs = read_routes('routes/Town01_All.txt')
         episode_count = min(len(route_configs), args.episodes)
 
         restart = False
         episode = 0
         while episode < episode_count:
             if not restart:
-                spawn_point, end_point, route = create_route(world, route_configs)
+                spawn_point, end_point, _, route = create_route(world, route_configs)
             ego_vehicle = spawn_ego_vehicle(world, spawn_point)
             rgb_sensor = start_camera(world, ego_vehicle)
             collision_sensor = start_collision_sensor(world, ego_vehicle)
