@@ -7,6 +7,8 @@ from utils.shared_utils import (init_world, read_routes, create_route,
                                 spawn_ego_vehicle, setup_traffic_manager, 
                                 cleanup, update_spectator, to_rgb, CropCustom,
                                 model_control, load_model)
+from utils.dist_tracker import DistanceTracker
+from utils.hlc_loader import HighLevelCommandLoader
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
 # Linux: ./CarlaUE4.sh -carla-server-timeout=10000ms -RenderOffScreen
@@ -47,12 +49,14 @@ def end_episode(ego_vehicle, end_point, frame, max_frames):
         done = True
     return done
 
-def run_episode(world, model, ego_vehicle, rgb_sensor, end_point, max_frames):
+def run_episode(world, model, device, ego_vehicle, rgb_sensor, end_point, route, route_length, max_frames):
     global has_collision
     has_collision = False
     global has_lane_invasion
     has_lane_invasion = False
 
+    dist_tracker = DistanceTracker()
+    hlc_loader = HighLevelCommandLoader(ego_vehicle, world.get_map(), route)
     spectator = world.get_spectator()
     for _ in range(10):
         world.tick()
@@ -61,21 +65,26 @@ def run_episode(world, model, ego_vehicle, rgb_sensor, end_point, max_frames):
     while True:
         if end_episode(ego_vehicle, end_point, frame, max_frames):
             break
-
-        transform = ego_vehicle.get_transform()
-        vehicle_location = transform.location
+        
+        hlc = hlc_loader.get_next_hlc()
 
         update_spectator(spectator, ego_vehicle)
-        world.tick()
         sensor_data = to_rgb(rgb_sensor.get_sensor_data())
         sensor_data = CropCustom()(sensor_data)
 
-        control = model_control(sensor_data, model)
+        control = model_control(sensor_data, hlc, model, device)
         ego_vehicle.apply_control(control)
+        dist_tracker.update(ego_vehicle)
+        world.tick()
+        frame += 1
 
     if not has_collision and not has_lane_invasion and frame <= max_frames:
         print("Episode successfully completed")
+        print("Route completion: 1.0")
         return True
+
+    route_completion = dist_tracker.get_total_distance() / route_length
+    print(f"Route completion: {route_completion}")
     return False
 
 
@@ -104,7 +113,7 @@ def main(args):
         lane_invasion_sensor = start_lane_invasion_sensor(world, ego_vehicle)
         lane_invasion_sensor.listen(lane_invasion_callback)
 
-        if run_episode(world, model, ego_vehicle, rgb_sensor, end_point, args.max_frames):
+        if run_episode(world, model, device, ego_vehicle, rgb_sensor, end_point, route, route_length, args.max_frames):
             completed_episodes += 1
 
         cleanup(ego_vehicle, rgb_sensor, collision_sensor, lane_invasion_sensor)

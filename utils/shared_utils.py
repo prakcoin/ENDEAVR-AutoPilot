@@ -3,6 +3,7 @@ import random
 import numpy as np
 import torch
 from model.AVModel import AVModel
+import torch.nn.functional as F
 from torchvision.transforms import v2
 
 def init_world(town):
@@ -118,15 +119,20 @@ def load_model(model_path, device):
     model.eval()
     return model
 
-def model_control(image, model):
+def model_control(image, hlc, model, device):
     preprocess = v2.Compose([
         v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)]),
         v2.Normalize(mean=(0.6651, 0.6439, 0.6236,), std=(0.1352, 0.1353, 0.1364,)),
     ])
     input_tensor = preprocess(image).unsqueeze(0)
+    hlc = F.one_hot(hlc.to(torch.int64), num_classes=4)
+    hlc = hlc.unsqueeze(0)
+
+    image.to(device)
+    hlc.to(device)
 
     with torch.no_grad():
-        output = model(input_tensor)
+        output = model(input_tensor, hlc)
     
     output = output.detach().cpu().numpy().flatten()
     steer, throttle_brake = output
