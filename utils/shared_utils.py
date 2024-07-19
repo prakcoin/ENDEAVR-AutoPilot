@@ -128,7 +128,7 @@ def model_control(image, hlc, model, device):
     hlc = F.one_hot(hlc.to(torch.int64), num_classes=4)
     hlc = hlc.unsqueeze(0)
 
-    image.to(device)
+    input_tensor.to(device)
     hlc.to(device)
 
     with torch.no_grad():
