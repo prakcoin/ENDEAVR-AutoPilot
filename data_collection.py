@@ -73,6 +73,7 @@ def run_episode(world, traffic_manager, ego_vehicle, rgb_sensor, end_point, max_
     episode_data = {
         'image': [],
         'controls': [],
+        'speed': [],
         'hlc': [],
     }
 
@@ -89,9 +90,13 @@ def run_episode(world, traffic_manager, ego_vehicle, rgb_sensor, end_point, max_
         sensor_data = to_rgb(rgb_sensor.get_sensor_data())
         sensor_data = CropCustom()(sensor_data)
 
+        velocity = ego_vehicle.get_velocity()
+        speed_km_h = (3.6 * np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2))
+
         frame_data = {
             'image': np.array(sensor_data),
             'controls': np.array([ego_vehicle.get_control().steer, ego_vehicle.get_control().throttle, ego_vehicle.get_control().brake]),
+            'speed': np.array([speed_km_h]),
             'hlc': np.array([road_option_to_int(traffic_manager.get_next_action(ego_vehicle)[0])])
         }
         for key, value in frame_data.items():
