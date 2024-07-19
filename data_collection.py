@@ -92,7 +92,7 @@ def run_episode(world, traffic_manager, ego_vehicle, rgb_sensor, end_point, max_
         frame_data = {
             'image': np.array(sensor_data),
             'controls': np.array([ego_vehicle.get_control().steer, ego_vehicle.get_control().throttle, ego_vehicle.get_control().brake]),
-            'hlc': np.array(road_option_to_int([traffic_manager.get_next_action(ego_vehicle)[0]]))
+            'hlc': np.array([road_option_to_int(traffic_manager.get_next_action(ego_vehicle)[0])])
         }
         for key, value in frame_data.items():
             episode_data[key].append(value)
@@ -143,9 +143,9 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
-    parser.add_argument('-t', '--town', type=str, default='Town02', help='CARLA town to use')
+    parser.add_argument('-t', '--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('-f', '--max_frames', type=int, default=5000, help='Number of frames to collect per episode')
-    parser.add_argument('-e', '--episodes', type=int, default=4, help='Number of episodes to collect data for')
+    parser.add_argument('-e', '--episodes', type=int, default=20, help='Number of episodes to collect data for')
     args = parser.parse_args()
 
     main(args)
