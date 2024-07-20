@@ -28,13 +28,21 @@ def setup_vehicle_for_tm(traffic_manager, ego_vehicle, route):
     traffic_manager.set_route(ego_vehicle, route)
     traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
     traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
-    traffic_manager.set_desired_speed(ego_vehicle, 45)
+    traffic_manager.set_desired_speed(ego_vehicle, 30)
 
 def set_red_light_time(world):
     actor_list = world.get_actors()
     for actor_ in actor_list:
         if isinstance(actor_, carla.TrafficLight):
             actor_.set_red_time(1.0)
+
+def set_traffic_lights_green(world):
+    traffic_lights = world.get_actors().filter('traffic.traffic_light')
+    
+    for traffic_light in traffic_lights:
+        traffic_light.set_state(carla.TrafficLightState.Green)
+        traffic_light.set_green_time(9999)
+        traffic_light.freeze(True)
 
 def create_route(world, episode_configs):
     spawn_points = world.get_map().get_spawn_points()

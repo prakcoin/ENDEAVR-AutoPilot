@@ -5,7 +5,8 @@ import h5py
 import carla
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
                                 spawn_ego_vehicle, create_route, to_rgb, road_option_to_int,
-                                cleanup, update_spectator, read_routes, CropCustom)
+                                cleanup, update_spectator, read_routes, set_traffic_lights_green,
+                                CropCustom)
 from utils.sensors import start_camera, start_collision_sensor, start_lane_invasion_sensor
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
@@ -117,14 +118,19 @@ def main(args):
     for weather in weather_conditions:
         print("Current weather:", weather)
         world.set_weather(getattr(carla.WeatherParameters, weather))
-        route_configs = read_routes('routes/Town01_All.txt')
+        route_configs = read_routes('routes/Town01_Junctions.txt')
         episode_count = min(len(route_configs), args.episodes)
 
         restart = False
         episode = 0
         while episode < episode_count:
             if not restart:
+                num_tries = 0
                 spawn_point, end_point, _, route = create_route(world, route_configs)
+            
+            if (args.vehicles == 0):
+                set_traffic_lights_green(world)
+
             ego_vehicle = spawn_ego_vehicle(world, spawn_point)
             rgb_sensor = start_camera(world, ego_vehicle)
             collision_sensor = start_collision_sensor(world, ego_vehicle)
@@ -135,7 +141,8 @@ def main(args):
 
             print(f'Episode: {episode + 1}')
             run_episode(world, traffic_manager, ego_vehicle, rgb_sensor, end_point, args.max_frames)
-            if (has_collision or has_lane_invasion):
+            if (has_collision or has_lane_invasion) and num_tries < 20:
+                num_tries += 1
                 episode -= 1
                 restart = True
                 print("Restarting ", end="")
@@ -150,7 +157,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
     parser.add_argument('-t', '--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('-f', '--max_frames', type=int, default=5000, help='Number of frames to collect per episode')
-    parser.add_argument('-e', '--episodes', type=int, default=20, help='Number of episodes to collect data for')
+    parser.add_argument('-e', '--episodes', type=int, default=30, help='Number of episodes to collect data for')
+    parser.add_argument('-v', '--vehicles', type=int, default=0, help='Number of vehicles present')
     args = parser.parse_args()
 
     main(args)
