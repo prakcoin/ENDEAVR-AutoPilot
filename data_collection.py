@@ -4,9 +4,9 @@ import numpy as np
 import h5py
 import carla
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
-                                spawn_ego_vehicle, create_route, to_rgb, road_option_to_int,
-                                cleanup, update_spectator, read_routes, set_traffic_lights_green,
-                                CropCustom)
+                                spawn_ego_vehicle, spawn_vehicles, create_route, to_rgb, 
+                                road_option_to_int, cleanup, update_spectator, read_routes, 
+                                set_traffic_lights_green, CropCustom)
 from utils.sensors import start_camera, start_collision_sensor, start_lane_invasion_sensor
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
@@ -114,6 +114,7 @@ def main(args):
 
     world, client = init_world(args.town)
     traffic_manager = setup_traffic_manager(client)
+    set_traffic_lights_green(world)
 
     for weather in weather_conditions:
         print("Current weather:", weather)
@@ -127,11 +128,11 @@ def main(args):
             if not restart:
                 num_tries = 0
                 spawn_point, end_point, _, route = create_route(world, route_configs)
-            
-            if (args.vehicles == 0):
-                set_traffic_lights_green(world)
 
-            ego_vehicle = spawn_ego_vehicle(world, spawn_point)
+            ego_vehicle = spawn_ego_vehicle(world, spawn_point)            
+            if (args.vehicles > 0):
+                vehicles_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
+
             rgb_sensor = start_camera(world, ego_vehicle)
             collision_sensor = start_collision_sensor(world, ego_vehicle)
             collision_sensor.listen(collision_callback)
@@ -148,7 +149,7 @@ def main(args):
                 print("Restarting ", end="")
             else:
                 restart = False
-            cleanup(ego_vehicle, rgb_sensor, collision_sensor, lane_invasion_sensor)
+            cleanup(ego_vehicle, vehicles_list, rgb_sensor, collision_sensor, lane_invasion_sensor)
             episode += 1
 
     print("Simulation complete")
