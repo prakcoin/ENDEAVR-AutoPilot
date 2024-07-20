@@ -1,5 +1,6 @@
 import argparse
 import os
+import logging
 import numpy as np
 import h5py
 import carla
@@ -119,7 +120,7 @@ def main(args):
     for weather in weather_conditions:
         print("Current weather:", weather)
         world.set_weather(getattr(carla.WeatherParameters, weather))
-        route_configs = read_routes('routes/Town01_Junctions.txt')
+        route_configs = read_routes('routes/Town01_All.txt')
         episode_count = min(len(route_configs), args.episodes)
 
         restart = False
@@ -152,14 +153,21 @@ def main(args):
             cleanup(ego_vehicle, vehicles_list, rgb_sensor, collision_sensor, lane_invasion_sensor)
             episode += 1
 
+            if (num_tries == 20):
+                logging.info(f"Skipped episode: Weather: {weather} - Route: {spawn_point} to {end_point}")
+
     print("Simulation complete")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
     parser.add_argument('-t', '--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('-f', '--max_frames', type=int, default=5000, help='Number of frames to collect per episode')
-    parser.add_argument('-e', '--episodes', type=int, default=30, help='Number of episodes to collect data for')
+    parser.add_argument('-e', '--episodes', type=int, default=20, help='Number of episodes to collect data for')
     parser.add_argument('-v', '--vehicles', type=int, default=0, help='Number of vehicles present')
     args = parser.parse_args()
+
+    logging.basicConfig(filename='logfile.log', 
+                        level=logging.INFO,
+                        format='%(asctime)s - %(levelname)s - %(message)s' ) 
 
     main(args)
