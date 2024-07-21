@@ -1,0 +1,6 @@
+216 229 265 Right Straight
+66 13 340 Left Right
+223 110 345 Straight Right
+102 17 148 Right Left
+14 229 139 Right Left
+235 114 0 Right
