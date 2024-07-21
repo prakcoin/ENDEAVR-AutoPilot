@@ -164,14 +164,14 @@ def main(args):
             setup_vehicle_for_tm(traffic_manager, ego_vehicle, route)
 
             run_episode(world, args.town, weather, traffic_manager, ego_vehicle, vehicle_list, rgb_sensor, end_point, args.max_frames)
-            if (has_collision or has_lane_invasion) and num_tries < 9999:
+            if (has_collision or has_lane_invasion) and num_tries < 20:
                 num_tries += 1
                 episode -= 1
                 restart = True
                 print("Restarting ", end="")
             else:
                 restart = False
-                if (num_tries == 9999):
+                if (num_tries == 20):
                     logging.info(f"Skipped episode: Town: {args.town} - Weather: {weather} - Route: {spawn_point_index} to {end_point_index}")
             cleanup(client, ego_vehicle, vehicle_list, rgb_sensor, collision_sensor, None)
             episode += 1
@@ -181,9 +181,9 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
-    parser.add_argument('-t', '--town', type=str, default='Town01', help='CARLA town to use')
+    parser.add_argument('-t', '--town', type=str, default='Town02', help='CARLA town to use')
     parser.add_argument('-f', '--max_frames', type=int, default=600, help='Number of frames to collect per episode')
-    parser.add_argument('-e', '--episodes', type=int, default=6, help='Number of episodes to collect data for')
+    parser.add_argument('-e', '--episodes', type=int, default=20, help='Number of episodes to collect data for')
     parser.add_argument('-v', '--vehicles', type=int, default=0, help='Number of vehicles present')
     args = parser.parse_args()
 
