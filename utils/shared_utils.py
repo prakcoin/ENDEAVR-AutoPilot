@@ -172,9 +172,11 @@ def read_routes(filename):
 def cleanup(client, ego_vehicle, vehicles, rgb_sensor, collision_sensor, lane_invasion_sensor):
     ego_vehicle.destroy()
     client.apply_batch([carla.command.DestroyActor(vehicle) for vehicle in vehicles])
-    collision_sensor.destroy()
-    lane_invasion_sensor.destroy()
     rgb_sensor.get_sensor().destroy()
+    if collision_sensor:
+        collision_sensor.destroy()
+    if lane_invasion_sensor:
+        lane_invasion_sensor.destroy()
 
 class CropCustom(object):
     def __call__(self, img):
