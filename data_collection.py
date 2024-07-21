@@ -50,14 +50,21 @@ def end_episode(ego_vehicle, end_point, frame, max_frames):
         done = True
     return done
 
-def update_data_file(episode_data):
-    if not os.path.isfile(f'data.h5'):
-            with h5py.File(f'data.h5', 'w') as file:
+def update_data_file(episode_data, town, weather, vehicle_list):
+    vehicle_str = "novehicles"
+    if vehicle_list:
+        vehicle_str = "vehicles"
+
+    if not os.path.isdir('data'):
+        os.mkdir('data')
+
+    if not os.path.isfile(f'data/{town}_data_{weather}_{vehicle_str}.h5'):
+            with h5py.File(f'data/{town}_data_{weather}_{vehicle_str}.h5', 'w') as file:
                 for key, data_array in episode_data.items():
                     data_array = np.array(data_array)
                     file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
     else:
-        with h5py.File(f'data.h5', 'a') as file:
+        with h5py.File(f'data/{town}_data_{weather}_{vehicle_str}.h5', 'a') as file:
             for key, data_array in episode_data.items():
                 data_array = np.array(data_array)
                 data_length = len(data_array)
@@ -66,7 +73,7 @@ def update_data_file(episode_data):
                 file[key].resize(new_size, axis=0)
                 file[key][old_size:new_size] = data_array
 
-def run_episode(world, traffic_manager, ego_vehicle, rgb_sensor, end_point, max_frames):
+def run_episode(world, town, weather, traffic_manager, ego_vehicle, vehicle_list, rgb_sensor, end_point, max_frames):
     global has_collision
     has_collision = False
     global has_lane_invasion
@@ -108,7 +115,7 @@ def run_episode(world, traffic_manager, ego_vehicle, rgb_sensor, end_point, max_
         frame += 1
 
     if not has_collision and not has_lane_invasion and frame <= max_frames:
-        update_data_file(episode_data)
+        update_data_file(episode_data, town, weather, vehicle_list)
 
 def main(args):
     weather_conditions = ['ClearNoon', 'WetNoon', 'SoftRainNoon', 'MidRainyNoon', 'HardRainNoon']
@@ -120,19 +127,24 @@ def main(args):
     for weather in weather_conditions:
         print("Current weather:", weather)
         world.set_weather(getattr(carla.WeatherParameters, weather))
-        route_configs = read_routes('routes/Town01_All.txt')
+        route_configs = read_routes('routes/Town01_Safe.txt')
         episode_count = min(len(route_configs), args.episodes)
 
+        vehicle_list = []
         restart = False
         episode = 0
         while episode < episode_count:
             if not restart:
                 num_tries = 0
-                spawn_point, end_point, _, route = create_route(world, route_configs)
+                spawn_point_index, end_point_index, _, route = create_route(world, route_configs)
+            
+            spawn_points = world.get_map().get_spawn_points()
+            spawn_point = spawn_points[spawn_point_index]
+            end_point = spawn_points[end_point_index]
 
             ego_vehicle = spawn_ego_vehicle(world, spawn_point)            
             if (args.vehicles > 0):
-                vehicles_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
+                vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
 
             rgb_sensor = start_camera(world, ego_vehicle)
             collision_sensor = start_collision_sensor(world, ego_vehicle)
@@ -142,7 +154,7 @@ def main(args):
             setup_vehicle_for_tm(traffic_manager, ego_vehicle, route)
 
             print(f'Episode: {episode + 1}')
-            run_episode(world, traffic_manager, ego_vehicle, rgb_sensor, end_point, args.max_frames)
+            run_episode(world, args.town, weather, traffic_manager, ego_vehicle, vehicle_list, rgb_sensor, end_point, args.max_frames)
             if (has_collision or has_lane_invasion) and num_tries < 20:
                 num_tries += 1
                 episode -= 1
@@ -150,11 +162,11 @@ def main(args):
                 print("Restarting ", end="")
             else:
                 restart = False
-            cleanup(ego_vehicle, vehicles_list, rgb_sensor, collision_sensor, lane_invasion_sensor)
+                if (num_tries == 20):
+                    logging.info(f"Skipped episode: Town: {args.town} - Weather: {weather} - Route: {spawn_point_index} to {end_point_index}")
+            cleanup(client, ego_vehicle, vehicle_list, rgb_sensor, collision_sensor, lane_invasion_sensor)
             episode += 1
 
-            if (num_tries == 20):
-                logging.info(f"Skipped episode: Weather: {weather} - Route: {spawn_point} to {end_point}")
 
     print("Simulation complete")
 
@@ -162,8 +174,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
     parser.add_argument('-t', '--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('-f', '--max_frames', type=int, default=5000, help='Number of frames to collect per episode')
-    parser.add_argument('-e', '--episodes', type=int, default=20, help='Number of episodes to collect data for')
-    parser.add_argument('-v', '--vehicles', type=int, default=0, help='Number of vehicles present')
+    parser.add_argument('-e', '--episodes', type=int, default=15, help='Number of episodes to collect data for')
+    parser.add_argument('-v', '--vehicles', type=int, default=60, help='Number of vehicles present')
     args = parser.parse_args()
 
     logging.basicConfig(filename='logfile.log', 

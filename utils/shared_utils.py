@@ -32,7 +32,7 @@ def setup_vehicle_for_tm(traffic_manager, ego_vehicle, route):
     traffic_manager.set_route(ego_vehicle, route)
     traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
     traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
-    traffic_manager.set_desired_speed(ego_vehicle, 30)
+    traffic_manager.set_desired_speed(ego_vehicle, 40)
 
 def set_red_light_time(world):
     actor_list = world.get_actors()
@@ -49,15 +49,14 @@ def set_traffic_lights_green(world):
         traffic_light.freeze(True)
 
 def create_route(world, episode_configs):
-    spawn_points = world.get_map().get_spawn_points()
     episode_config = random.choice(episode_configs)
     episode_configs.remove(episode_config)
     print(f"Route from spawn point #{episode_config[0][0]} to #{episode_config[0][1]}")
-    spawn_point = spawn_points[episode_config[0][0]]
-    end_point = spawn_points[episode_config[0][1]]
+    spawn_point_index = episode_config[0][0]
+    end_point_index = episode_config[0][1]
     route_length = episode_config[1]
     route = episode_config[2]
-    return spawn_point, end_point, route_length, route
+    return spawn_point_index, end_point_index, route_length, route
 
 def get_actor_blueprints(world, filter, generation):
     bps = world.get_blueprint_library().filter(filter)
@@ -170,9 +169,9 @@ def read_routes(filename):
     routes = [((int(line.split()[0]), int(line.split()[1])), int(line.split()[2]), line.split()[3:]) for line in lines]
     return routes
 
-def cleanup(ego_vehicle, vehicles, rgb_sensor, collision_sensor, lane_invasion_sensor):
+def cleanup(client, ego_vehicle, vehicles, rgb_sensor, collision_sensor, lane_invasion_sensor):
     ego_vehicle.destroy()
-    for vehicle in vehicles: vehicle.destroy()
+    client.apply_batch([carla.command.DestroyActor(vehicle) for vehicle in vehicles])
     collision_sensor.destroy()
     lane_invasion_sensor.destroy()
     rgb_sensor.get_sensor().destroy()
