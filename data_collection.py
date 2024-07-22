@@ -53,30 +53,20 @@ def end_episode(ego_vehicle, end_point, frame, max_frames, idle_frames):
         done = True
     return done
 
-def update_data_file(episode_data, town, weather, vehicle_list):
+def update_data_file(episode_data, episode_count, town, weather, vehicle_list):
     vehicle_str = "novehicles"
     if vehicle_list:
         vehicle_str = "vehicles"
 
-    if not os.path.isdir('data'):
-        os.mkdir('data')
+    if not os.path.isdir(f'data/{town}_{weather}_{vehicle_str}'):
+        os.mkdir(f'data/{town}_{weather}_{vehicle_str}')
 
-    if not os.path.isfile(f'data/{town}_data_{weather}_{vehicle_str}.h5'):
-            with h5py.File(f'data/{town}_data_{weather}_{vehicle_str}.h5', 'w') as file:
-                for key, data_array in episode_data.items():
-                    data_array = np.array(data_array)
-                    file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
-    else:
-        with h5py.File(f'data/{town}_data_{weather}_{vehicle_str}.h5', 'a') as file:
-            for key, data_array in episode_data.items():
-                data_array = np.array(data_array)
-                data_length = len(data_array)
-                old_size = file[key].shape[0]
-                new_size = old_size + data_length
-                file[key].resize(new_size, axis=0)
-                file[key][old_size:new_size] = data_array
+    with h5py.File(f'data/{town}_{weather}_{vehicle_str}/episode_{episode_count + 1}.h5', 'w') as file:
+        for key, data_array in episode_data.items():
+            data_array = np.array(data_array)
+            file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
 
-def run_episode(world, town, weather, traffic_manager, ego_vehicle, vehicle_list, rgb_sensor, end_point, max_frames):
+def run_episode(world, town, weather, episode_count, traffic_manager, ego_vehicle, vehicle_list, rgb_sensor, end_point, max_frames):
     global has_collision
     has_collision = False
     global has_lane_invasion
@@ -124,10 +114,11 @@ def run_episode(world, town, weather, traffic_manager, ego_vehicle, vehicle_list
         frame += 1
 
     if not has_collision and not has_lane_invasion and frame <= max_frames and idle_frames < 6000:
-        update_data_file(episode_data, town, weather, vehicle_list)
+        update_data_file(episode_data, episode_count, town, weather, vehicle_list)
 
 def main(args):
-    weather_conditions = ['ClearNoon', 'WetNoon', 'SoftRainNoon', 'MidRainyNoon', 'HardRainNoon']
+    weather_conditions = ['ClearNoon', 'CloudyNoon', 'SoftRainNoon', 'MidRainyNoon', 'HardRainNoon',
+                          'ClearNight', 'CloudyNight', 'SoftRainNight', 'MidRainyNight', 'HardRainNight']
 
     world, client = init_world(args.town)
     traffic_manager = setup_traffic_manager(client)
@@ -136,7 +127,7 @@ def main(args):
     for weather in weather_conditions:
         print("Current weather:", weather)
         world.set_weather(getattr(carla.WeatherParameters, weather))
-        route_configs = read_routes('routes/Town01_Noisy.txt')
+        route_configs = read_routes(args.route_file)
         episode_count = min(len(route_configs), args.episodes)
 
         vehicle_list = []
@@ -163,7 +154,7 @@ def main(args):
             #lane_invasion_sensor.listen(lane_invasion_callback)
             setup_vehicle_for_tm(traffic_manager, ego_vehicle, route)
 
-            run_episode(world, args.town, weather, traffic_manager, ego_vehicle, vehicle_list, rgb_sensor, end_point, args.max_frames)
+            run_episode(world, args.town, weather, episode, traffic_manager, ego_vehicle, vehicle_list, rgb_sensor, end_point, args.max_frames)
             if (has_collision or has_lane_invasion) and num_tries < 20:
                 num_tries += 1
                 episode -= 1
@@ -185,6 +176,7 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--max_frames', type=int, default=600, help='Number of frames to collect per episode')
     parser.add_argument('-e', '--episodes', type=int, default=20, help='Number of episodes to collect data for')
     parser.add_argument('-v', '--vehicles', type=int, default=0, help='Number of vehicles present')
+    parser.add_argument('-r', '--route_file', type=str, default='routes/Town01_All.txt', help='Filepath for route file')
     args = parser.parse_args()
 
     logging.basicConfig(filename='logfile.log', 

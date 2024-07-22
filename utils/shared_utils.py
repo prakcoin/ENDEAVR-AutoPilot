@@ -48,7 +48,7 @@ def set_traffic_lights_green(world):
         traffic_light.set_green_time(9999)
         traffic_light.freeze(True)
 
-def create_route(world, episode_configs):
+def create_route(episode_configs):
     episode_config = random.choice(episode_configs)
     episode_configs.remove(episode_config)
     print(f"Route from spawn point #{episode_config[0][0]} to #{episode_config[0][1]}")
@@ -78,7 +78,6 @@ def get_actor_blueprints(world, filter, generation):
     except:
         print("Warning! Actor Generation is not valid. No actor will be spawned.")
         return []
-
 
 def get_vehicle_spawn_points(world, n_vehicles):
     spawn_points = world.get_map().get_spawn_points()
@@ -127,7 +126,6 @@ def spawn_vehicles(world, client, n_vehicles, traffic_manager):
         else:
             vehicles_list.append(response.actor_id)
     return vehicles_list
-
 
 def update_spectator(spectator, vehicle):
     ego_transform = vehicle.get_transform()

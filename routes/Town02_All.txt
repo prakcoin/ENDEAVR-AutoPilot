@@ -1,0 +1,6 @@
+32 75 174 Right Straight
+52 59 148 Left Right
+18 83 140 Right Left
+24 79 158 Right Right
+77 1 166 Left Left
+76 33 193 Straight Left

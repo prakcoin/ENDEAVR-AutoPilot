@@ -1,3 +1,0 @@
-24 79 158 Right Right
-77 1 166 Left Left
-76 33 193 Straight Left
