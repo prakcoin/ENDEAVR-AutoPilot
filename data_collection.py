@@ -59,7 +59,7 @@ def update_data_file(episode_data, episode_count, town, weather, vehicle_list):
         vehicle_str = "vehicles"
 
     if not os.path.isdir(f'data/{town}_{weather}_{vehicle_str}'):
-        os.mkdir(f'data/{town}_{weather}_{vehicle_str}')
+        os.makedirs(f'data/{town}_{weather}_{vehicle_str}')
 
     with h5py.File(f'data/{town}_{weather}_{vehicle_str}/episode_{episode_count + 1}.h5', 'w') as file:
         for key, data_array in episode_data.items():
@@ -137,7 +137,7 @@ def main(args):
             print(f'Episode: {episode + 1}')
             if not restart:
                 num_tries = 0
-                spawn_point_index, end_point_index, _, route = create_route(world, route_configs)
+                spawn_point_index, end_point_index, _, route = create_route(route_configs)
             
             spawn_points = world.get_map().get_spawn_points()
             spawn_point = spawn_points[spawn_point_index]
@@ -172,9 +172,9 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
-    parser.add_argument('-t', '--town', type=str, default='Town02', help='CARLA town to use')
+    parser.add_argument('-t', '--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('-f', '--max_frames', type=int, default=600, help='Number of frames to collect per episode')
-    parser.add_argument('-e', '--episodes', type=int, default=20, help='Number of episodes to collect data for')
+    parser.add_argument('-e', '--episodes', type=int, default=50, help='Number of episodes to collect data for')
     parser.add_argument('-v', '--vehicles', type=int, default=0, help='Number of vehicles present')
     parser.add_argument('-r', '--route_file', type=str, default='routes/Town01_All.txt', help='Filepath for route file')
     args = parser.parse_args()
