@@ -192,20 +192,24 @@ def load_model(model_path, device):
     model.eval()
     return model
 
-def model_control(image, hlc, model, device):
-    preprocess = v2.Compose([
-        v2.Compose([v2.ToImage(), v2.ToDtype(torch.float32, scale=True)]),
-        v2.Normalize(mean=(0.6651, 0.6439, 0.6236,), std=(0.1352, 0.1353, 0.1364,)),
-    ])
-    input_tensor = preprocess(image).unsqueeze(0)
+def model_control(image, hlc, speed, model, device):
+    input_tensor = torch.tensor(image).permute(2, 0, 1)
+    input_tensor /= 255.0
+    input_tensor = v2.Normalize(mean=(0.4325, 0.4136, 0.3894,), std=(0.1059, 0.1040, 0.0999,))(input_tensor)
+    input_tensor = input_tensor.unsqueeze(0)
+
     hlc = F.one_hot(hlc.to(torch.int64), num_classes=4)
     hlc = hlc.unsqueeze(0)
 
+    speed = torch.tensor(speed, dtype=torch.float32)
+    speed = speed.unsqueeze(0)
+
     input_tensor.to(device)
     hlc.to(device)
+    speed = speed.to(device)
 
     with torch.no_grad():
-        output = model(input_tensor, hlc)
+        output = model(input_tensor, hlc, speed)
     
     output = output.detach().cpu().numpy().flatten()
     steer, throttle_brake = output
