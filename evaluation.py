@@ -86,7 +86,7 @@ def run_episode(world, model, device, ego_vehicle, rgb_sensor, end_point, route,
 
         update_spectator(spectator, ego_vehicle)
         sensor_data = to_rgb(rgb_sensor.get_sensor_data())
-        sensor_data = CropCustom()(sensor_data)
+        sensor_data = np.array(CropCustom()(sensor_data))
 
         control = model_control(sensor_data, hlc, speed_km_h, model, device)
         ego_vehicle.apply_control(control)
@@ -106,7 +106,7 @@ def run_episode(world, model, device, ego_vehicle, rgb_sensor, end_point, route,
 def main(args):
     current_directory = os.getcwd()
     parent_directory = os.path.dirname(current_directory)
-    model_path = os.path.join(parent_directory, 'ENDEAVR-AutoPilot', 'model', 'saved_models', 'av_modelv2.pt')
+    model_path = os.path.join(parent_directory, 'ENDEAVR-AutoPilot', 'model', 'saved_models', 'av_modelv3.pt')
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_model(model_path, device)

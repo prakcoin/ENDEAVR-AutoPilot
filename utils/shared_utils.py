@@ -194,14 +194,16 @@ def load_model(model_path, device):
 
 def model_control(image, hlc, speed, model, device):
     input_tensor = torch.tensor(image).permute(2, 0, 1)
-    input_tensor /= 255.0
+    input_tensor = input_tensor / 255.0
     input_tensor = v2.Normalize(mean=(0.4325, 0.4136, 0.3894,), std=(0.1059, 0.1040, 0.0999,))(input_tensor)
     input_tensor = input_tensor.unsqueeze(0)
 
+    hlc = torch.tensor(hlc, dtype=torch.long)
     hlc = F.one_hot(hlc.to(torch.int64), num_classes=4)
     hlc = hlc.unsqueeze(0)
 
     speed = torch.tensor(speed, dtype=torch.float32)
+    speed = torch.clamp(speed / 40, 0, 1)
     speed = speed.unsqueeze(0)
 
     input_tensor.to(device)
@@ -221,5 +223,4 @@ def model_control(image, hlc, speed, model, device):
         brake = (0.5 - throttle_brake) / 0.5
     
     steer = (float(steer) * 2.0) - 1.0
-    print(f"Steer: {steer} - Throttle: {throttle} - Brake: {brake}")
     return carla.VehicleControl(throttle=throttle, steer=steer, brake=brake)
