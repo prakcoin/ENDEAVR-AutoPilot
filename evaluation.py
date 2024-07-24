@@ -2,6 +2,7 @@ import os
 import argparse
 import torch
 import carla
+import logging
 import numpy as np
 from utils.sensors import start_camera, start_collision_sensor, start_lane_invasion_sensor
 from utils.shared_utils import (init_world, read_routes, create_route,
@@ -147,10 +148,10 @@ def main(args):
         collisions.append(num_collisions)
         lane_invasions.append(num_lane_invasions)
         cleanup(client, ego_vehicle, vehicle_list, rgb_sensor, collision_sensor, lane_invasion_sensor)
-    print(f"Episode completion rate: {completed_episodes / episode_count}")
-    print(f"Average route completion: {sum(route_completions) / len(route_completions)}")
-    print(f"Average collisions: {sum(collisions) / len(collisions)}")
-    print(f"Average lane invasions: {sum(lane_invasions) / len(lane_invasions)}")
+    logging.info(f"Episode completion rate: {completed_episodes / episode_count}")
+    logging.info(f"Average route completion: {sum(route_completions) / len(route_completions)}")
+    logging.info(f"Average collisions: {sum(collisions) / len(collisions)}")
+    logging.info(f"Average lane invasions: {sum(lane_invasions) / len(lane_invasions)}")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Model Evaluation Script')
@@ -161,4 +162,9 @@ if __name__ == '__main__':
     parser.add_argument('-v', '--vehicles', type=int, default=0, help='Number of vehicles present')
     parser.add_argument('-r', '--route_file', type=str, default='routes/Town02_Test.txt', help='Filepath for route file')
     args = parser.parse_args()
+    
+    logging.basicConfig(filename='evaluation_log.log', 
+                        level=logging.INFO,
+                        format='%(message)s' ) 
+
     main(args)

@@ -179,7 +179,7 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--route_file', type=str, default='routes/Town01_All.txt', help='Filepath for route file')
     args = parser.parse_args()
 
-    logging.basicConfig(filename='logfile.log', 
+    logging.basicConfig(filename='data_collection_log.log', 
                         level=logging.INFO,
                         format='%(asctime)s - %(levelname)s - %(message)s' ) 
 
