@@ -27,9 +27,8 @@ def setup_traffic_manager(client):
     traffic_manager.set_global_distance_to_leading_vehicle(2.5)
     return traffic_manager
 
-def setup_vehicle_for_tm(traffic_manager, ego_vehicle, route):
+def setup_vehicle_for_tm(traffic_manager, ego_vehicle):
     ego_vehicle.set_autopilot(True, 8000)
-    traffic_manager.set_route(ego_vehicle, route)
     traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
     traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
     traffic_manager.set_desired_speed(ego_vehicle, 40)
@@ -51,7 +50,6 @@ def set_traffic_lights_green(world):
 def create_route(episode_configs):
     episode_config = random.choice(episode_configs)
     episode_configs.remove(episode_config)
-    print(f"Route from spawn point #{episode_config[0][0]} to #{episode_config[0][1]}")
     spawn_point_index = episode_config[0][0]
     end_point_index = episode_config[0][1]
     route_length = episode_config[1]

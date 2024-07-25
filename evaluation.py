@@ -97,17 +97,17 @@ def run_episode(world, model, device, ego_vehicle, rgb_sensor, end_point, route,
 
     if not has_collision and frame <= max_frames:
         print("Episode successfully completed")
-        print("Route completion: 1.0")
+        logging.info("Route completion: 1.0")
         return True, 1.0
 
     route_completion = dist_tracker.get_total_distance() / route_length
-    print(f"Route completion: {route_completion}")
+    logging.info(f"Route completion: {route_completion}")
     return False, route_completion
 
 def main(args):
     current_directory = os.getcwd()
     parent_directory = os.path.dirname(current_directory)
-    model_path = os.path.join(parent_directory, 'ENDEAVR-AutoPilot', 'model', 'saved_models', 'av_model_lstmv1.pt')
+    model_path = os.path.join(parent_directory, 'ENDEAVR-AutoPilot', 'model', 'saved_models', args.model)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_model(model_path, device)
@@ -129,6 +129,8 @@ def main(args):
         spawn_points = world.get_map().get_spawn_points()
         spawn_point = spawn_points[spawn_point_index]
         end_point = spawn_points[end_point_index]
+
+        logging.info(f"Route from spawn point #{spawn_point_index} to #{end_point_index}")
 
         ego_vehicle = spawn_ego_vehicle(world, spawn_point)
         if (args.vehicles > 0):
@@ -155,12 +157,13 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Model Evaluation Script')
-    parser.add_argument('-t', '--town', type=str, default='Town02', help='CARLA town to use')
-    parser.add_argument('-w', '--weather', type=str, default='ClearNoon', help='Weather condition to set')
-    parser.add_argument('-f', '--max_frames', type=int, default=5000, help='Number of frames to collect per episode')
-    parser.add_argument('-e', '--episodes', type=int, default=4, help='Number of episodes to evaluate for')
-    parser.add_argument('-v', '--vehicles', type=int, default=0, help='Number of vehicles present')
-    parser.add_argument('-r', '--route_file', type=str, default='routes/Town02_Test.txt', help='Filepath for route file')
+    parser.add_argument('--town', type=str, default='Town02', help='CARLA town to use')
+    parser.add_argument('--weather', type=str, default='ClearNoon', help='Weather condition to set')
+    parser.add_argument('--max_frames', type=int, default=5000, help='Number of frames to collect per episode')
+    parser.add_argument('--episodes', type=int, default=4, help='Number of episodes to evaluate for')
+    parser.add_argument('--vehicles', type=int, default=0, help='Number of vehicles present')
+    parser.add_argument('--route_file', type=str, default='routes/Town02_Test.txt', help='Filepath for route file')
+    parser.add_argument('--model', type=str, default='av_model_lstmv1.pt', help='Name of saved model')
     args = parser.parse_args()
     
     logging.basicConfig(filename='evaluation_log.log', 
