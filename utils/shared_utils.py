@@ -2,7 +2,7 @@ import carla
 import random
 import numpy as np
 import torch
-from model.AVModel import AVModel
+from model.AVModel import AVModel, AVModelLSTM
 import torch.nn.functional as F
 from torchvision.transforms import v2
 
@@ -186,7 +186,7 @@ class CropCustom(object):
         return cropped_img
 
 def load_model(model_path, device):
-    model = AVModel()
+    model = AVModelLSTM()
     model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
     model.to(device)
     model.eval()

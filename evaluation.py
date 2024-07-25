@@ -107,7 +107,7 @@ def run_episode(world, model, device, ego_vehicle, rgb_sensor, end_point, route,
 def main(args):
     current_directory = os.getcwd()
     parent_directory = os.path.dirname(current_directory)
-    model_path = os.path.join(parent_directory, 'ENDEAVR-AutoPilot', 'model', 'saved_models', 'av_modelv3.pt')
+    model_path = os.path.join(parent_directory, 'ENDEAVR-AutoPilot', 'model', 'saved_models', 'av_model_lstmv1.pt')
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_model(model_path, device)
