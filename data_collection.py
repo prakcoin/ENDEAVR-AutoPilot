@@ -66,7 +66,7 @@ def update_data_file(episode_data, episode_count, weather, vehicle_list, args):
     if not os.path.isdir(f'data'):
         os.makedirs(f'data')
 
-    with h5py.File(f'data/{args.town}_{weather}_{vehicle_str}_episode_{episode_count + 1}_{agent_str}.h5', 'w') as file:
+    with h5py.File(f'data/{args.town}_{weather}_{vehicle_str}_{agent_str}_episode_{episode_count + 1}.h5', 'w') as file:
         for key, data_array in episode_data.items():
             data_array = np.array(data_array)
             file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
