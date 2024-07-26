@@ -26,16 +26,6 @@ class DefaultTrafficManagerAgent:
     def get_next_action(self):
         return self.traffic_manager.get_next_action(self.vehicle)[0]
 
-    def done(self):
-        vehicle_location = self.vehicle.get_location()
-        final_location = self.path[-1] if self.path else self.destination.location if self.route else None
-
-        if final_location is None:
-            return False 
-
-        distance = vehicle_location.distance(final_location)
-        return distance < 1.0
-
 class NoisyTrafficManagerAgent:
     """
     This agent adds noise to the output controls of the CARLA Traffic Manager for data collection.
@@ -113,13 +103,3 @@ class NoisyTrafficManagerAgent:
 
     def get_next_action(self):
         return self.traffic_manager.get_next_action(self.vehicle)[0]
-
-    def done(self):
-        vehicle_location = self.vehicle.get_location()
-        final_location = self.path[-1] if self.path else self.destination.location if self.route else None
-
-        if final_location is None:
-            return False  # The vehicle has no path or route
-
-        distance = vehicle_location.distance(final_location)
-        return distance < 1.0
