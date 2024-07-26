@@ -1,0 +1,10 @@
+116 99 299 Straight Right Straight
+100 204 336 Straight Left Straight
+158 227 432 Right Left
+80 68 446 Left Right
+51 89 0 Straight
+48 78 0 Straight
+32 83 0 Right
+167 92 0 Right
+233 125 0 Left
+200 77 0 Left
