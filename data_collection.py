@@ -128,8 +128,9 @@ def run_episode(world, weather, episode_count, ego_vehicle, agent, vehicle_list,
         update_data_file(episode_data, episode_count, weather, vehicle_list, args)
 
 def main(args):
-    weather_conditions = ['ClearNoon', 'CloudyNoon', 'SoftRainNoon', 'MidRainyNoon', 'HardRainNoon',
-                          'ClearNight', 'CloudyNight', 'SoftRainNight', 'MidRainyNight', 'HardRainNight']
+    weather_conditions = ['ClearNoon', 'CloudyNoon', 'WetNoon', 'SoftRainNoon', 'MidRainyNoon', 'HardRainNoon',
+                          'ClearNight', 'CloudyNight', 'WetNight', 'SoftRainNight', 'MidRainyNight', 'HardRainNight',
+                          'ClearSunset', 'CloudySunset', 'WetSunset', 'SoftRainSunset', 'MidRainSunset', 'HardRainSunset']
 
     world, client = init_world(args.town)
     traffic_manager = setup_traffic_manager(client)
@@ -196,7 +197,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_frames', type=int, default=600, help='Number of frames to collect per episode')
     parser.add_argument('--episodes', type=int, default=50, help='Number of episodes to collect data for')
     parser.add_argument('--vehicles', type=int, default=0, help='Number of vehicles present')
-    parser.add_argument('--route_file', type=str, default='routes/Town01_All.txt', help='Filepath for route file')
+    parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
     parser.add_argument('--max_tries', type=int, default=20, help='Maximum number of tries before skipping an episode')
     parser.add_argument('--noisy_agent', action="store_true", help='Use noisy agent over default agent')
     parser.add_argument('--lane_invasion', action="store_true", help='Activate lane invasion sensor')
