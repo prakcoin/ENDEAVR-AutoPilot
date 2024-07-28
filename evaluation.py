@@ -100,7 +100,7 @@ def run_episode(world, model, device, ego_vehicle, rgb_sensor, end_point, route,
         logging.info("Route completion: 1.0")
         return True, 1.0
 
-    route_completion = dist_tracker.get_total_distance() / route_length
+    route_completion = min(dist_tracker.get_total_distance() / route_length, 1.0)
     logging.info(f"Route completion: {route_completion}")
     return False, route_completion
 
@@ -124,13 +124,13 @@ def main(args):
     route_completions = []
     collisions = []
     lane_invasions = []
-    for _ in range(episode_count):
+    for episode in range(episode_count):
         spawn_point_index, end_point_index, route_length, route = create_route(route_configs)
         spawn_points = world.get_map().get_spawn_points()
         spawn_point = spawn_points[spawn_point_index]
         end_point = spawn_points[end_point_index]
 
-        logging.info(f"Route from spawn point #{spawn_point_index} to #{end_point_index}")
+        logging.info(f"Episode {episode}: route from spawn point #{spawn_point_index} to #{end_point_index}")
 
         ego_vehicle = spawn_ego_vehicle(world, spawn_point)
         if (args.vehicles > 0):
@@ -151,18 +151,18 @@ def main(args):
         lane_invasions.append(num_lane_invasions)
         cleanup(client, ego_vehicle, vehicle_list, rgb_sensor, collision_sensor, lane_invasion_sensor)
     logging.info(f"Episode completion rate: {completed_episodes / episode_count}")
-    logging.info(f"Average route completion: {sum(route_completions) / len(route_completions)}")
-    logging.info(f"Average collisions: {sum(collisions) / len(collisions)}")
-    logging.info(f"Average lane invasions: {sum(lane_invasions) / len(lane_invasions)}")
+    logging.info(f"Average route completion: {sum(route_completions) / episode_count}")
+    logging.info(f"Average collisions: {sum(collisions) / episode_count}")
+    logging.info(f"Average lane invasions: {sum(lane_invasions) / episode_count}")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Model Evaluation Script')
     parser.add_argument('--town', type=str, default='Town02', help='CARLA town to use')
     parser.add_argument('--weather', type=str, default='ClearNoon', help='Weather condition to set')
     parser.add_argument('--max_frames', type=int, default=5000, help='Number of frames to collect per episode')
-    parser.add_argument('--episodes', type=int, default=4, help='Number of episodes to evaluate for')
+    parser.add_argument('--episodes', type=int, default=12, help='Number of episodes to evaluate for')
     parser.add_argument('--vehicles', type=int, default=0, help='Number of vehicles present')
-    parser.add_argument('--route_file', type=str, default='routes/Town02_Test.txt', help='Filepath for route file')
+    parser.add_argument('--route_file', type=str, default='routes/Town02_All.txt', help='Filepath for route file')
     parser.add_argument('--model', type=str, default='av_model_lstmv1.pt', help='Name of saved model')
     args = parser.parse_args()
     
