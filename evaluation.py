@@ -26,6 +26,7 @@ def collision_callback(data):
 num_lane_invasions = 0
 def lane_invasion_callback(data):
     global num_lane_invasions
+    logging.info("Lane invasion detected")
     num_lane_invasions += 1
 
 def end_reached(ego_vehicle, end_point):
@@ -41,16 +42,16 @@ def end_reached(ego_vehicle, end_point):
 def end_episode(ego_vehicle, end_point, frame, max_frames, idle_frames):
     done = False
     if end_reached(ego_vehicle, end_point):
-        print("Target reached, episode ending")
+        logging.info("Target reached, episode ending")
         done = True
     elif frame >= max_frames:
-        print("Maximum frames reached, episode ending")
+        logging.info("Maximum frames reached, episode ending")
         done = True
     if idle_frames >= 600:
-        print("Vehicle idle for too long, ending episode.")
+        logging.info("Vehicle idle for too long, ending episode.")
         done = True
     elif has_collision:
-        print("Collision detected, episode ending")
+        logging.info("Collision detected, episode ending")
         done = True
     return done
 
@@ -96,7 +97,6 @@ def run_episode(world, model, device, ego_vehicle, rgb_sensor, end_point, route,
         frame += 1
 
     if not has_collision and frame <= max_frames:
-        print("Episode successfully completed")
         logging.info("Route completion: 1.0")
         return True, 1.0
 
