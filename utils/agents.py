@@ -6,6 +6,7 @@ class DefaultTrafficManagerAgent:
     def __init__(self, vehicle, traffic_manager):
         self.vehicle = vehicle
         self.traffic_manager = traffic_manager
+        self.noise = False
         self.path = None
         self.route = None
         self.destination = None
