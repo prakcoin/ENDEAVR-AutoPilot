@@ -47,46 +47,60 @@ class AVModel(nn.Module):
 class AVModelLSTM(nn.Module):
     def __init__(self):
         super(AVModelLSTM, self).__init__()
+        self.input_layer = nn.Conv2d(3, 8, kernel_size=5, padding=1, stride=4, padding_mode='reflect')
+
+        self.norm = nn.LayerNorm(8)
+        self.attention = nn.MultiheadAttention(embed_dim=8, num_heads=1, batch_first=True, dropout=0.5)
+        self.scale = nn.Parameter(torch.zeros(1))
+        self.act = nn.ReLU()
+
         self.conv_layers = nn.Sequential(
-            SeparableConv2d(in_channels=3, out_channels=8, kernel_size=5, stride=2, bias=False),
-            nn.SELU(),
-            SeparableConv2d(in_channels=8, out_channels=16, kernel_size=5, stride=2, bias=False),
-            nn.SELU(),
-            SeparableConv2d(in_channels=16, out_channels=24, kernel_size=5, stride=2, bias=False),
-            nn.SELU(),
-            SeparableConv2d(in_channels=24, out_channels=32, kernel_size=3, stride=2, bias=False),
-            nn.SELU(),
-            SeparableConv2d(in_channels=32, out_channels=32, kernel_size=3, stride=1, bias=False),
-            nn.SELU(),
-            SeparableConv2d(in_channels=32, out_channels=32, kernel_size=3, stride=1, bias=False),
-            nn.SELU(),
-            nn.Dropout2d(0.2),
+            ResidualBlock(in_channels=8, out_channels=8, kernel_size=3, stride=1, num_layers=2),
+            ResidualBlock(in_channels=8, out_channels=16, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=16, out_channels=32, kernel_size=3, stride=1, num_layers=2),
+            ResidualBlock(in_channels=32, out_channels=64, kernel_size=3, stride=2, num_layers=2),
+            nn.Dropout2d(0.5),
         )
 
-        self.conv_lstm = ConvLSTM(input_dim=32, hidden_dim=32, kernel_size=(5, 5), num_layers=3, batch_first=True, bias=True, return_all_layers=False)
-
+        self.conv_lstm = ConvLSTM(input_dim=64, hidden_dim=64, kernel_size=(5, 5), num_layers=3, batch_first=True, bias=True, return_all_layers=False)
+        self.dropout = nn.Dropout2d(0.5)
+        
         self.dense_layers = nn.Sequential(
-            nn.Linear(2693, 50, bias=False),
-            nn.SELU(),
-            nn.Linear(50, 10, bias=False),
-            nn.SELU(),
+            nn.Linear(6277, 50),
+            nn.ReLU(),
+            nn.Linear(50, 10),
+            nn.ReLU(),
             nn.Dropout(0.5),
         )
 
         self.output_layer = nn.Linear(10, 2)
 
+    def use_attention(self, x):
+        batch_size, channels, height, width = x.size()
+        x_att = x.reshape(batch_size, channels, height * width).transpose(1, 2)
+        x_att = self.norm(x_att)
+        attention_output, _ = self.attention(x_att, x_att, x_att)
+        attention_output = attention_output.transpose(1, 2).reshape(batch_size, channels, height, width)
+        x = self.scale * attention_output + x
+        return x
+
     def forward(self, img, hlc, speed):
-        x = self.conv_layers(img)
+        x = self.input_layer(img)
+        x = self.use_attention(x)
+        x = self.act(x)
+
+        x = self.conv_layers(x)
         x = x.unsqueeze(1)
 
         _, last_states = self.conv_lstm(x)
         x =  last_states[0][0]
+        x = self.dropout(x)
 
         #x = torch.mean(x.view(x.size(0), x.size(1), -1), dim=2) # GlobalAveragePooling2D
         x = x.reshape(x.size(0), -1)
         speed = speed.view(speed.size(0), -1)
         hlc = hlc.view(hlc.size(0), -1)
-        x = torch.cat((x, speed, hlc), dim=1)
+        x = torch.cat((x, hlc, speed), dim=1)
 
         x = self.dense_layers(x)
         x = self.output_layer(x)
