@@ -163,7 +163,7 @@ if __name__ == '__main__':
     parser.add_argument('--episodes', type=int, default=12, help='Number of episodes to evaluate for')
     parser.add_argument('--vehicles', type=int, default=0, help='Number of vehicles present')
     parser.add_argument('--route_file', type=str, default='routes/Town02_All.txt', help='Filepath for route file')
-    parser.add_argument('--model', type=str, default='av_model_lstmv1.pt', help='Name of saved model')
+    parser.add_argument('--model', type=str, default='av_model_lstm.pt', help='Name of saved model')
     args = parser.parse_args()
     
     logging.basicConfig(filename='evaluation_log.log', 
