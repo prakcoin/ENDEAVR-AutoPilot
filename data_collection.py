@@ -146,7 +146,7 @@ def main(args):
     set_traffic_lights_green(world)
     world.set_weather(getattr(carla.WeatherParameters, args.weather))
 
-    for iter in range(10):
+    for iter in range(args.iterations):
         print("Current weather:", args.weather)
         route_configs = read_routes(args.route_file)
         episode_count = min(len(route_configs), args.episodes)
@@ -204,6 +204,7 @@ if __name__ == '__main__':
     parser.add_argument('--weather', type=str, default='ClearNoon', help='CARLA weather conditions to use')
     parser.add_argument('--max_frames', type=int, default=600, help='Number of frames to collect per episode')
     parser.add_argument('--episodes', type=int, default=16, help='Number of episodes to collect data for')
+    parser.add_argument('--iterations', type=int, default=1, help='Number of iterations to run for')
     parser.add_argument('--vehicles', type=int, default=0, help='Number of vehicles present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
     parser.add_argument('--max_tries', type=int, default=999, help='Maximum number of tries before skipping an episode')
