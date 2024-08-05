@@ -35,15 +35,15 @@ def end_reached(ego_vehicle, end_point):
     distance = vehicle_location.distance(end_location)
     return distance < 1.0
 
-def end_episode(ego_vehicle, end_point, frame, max_frames, idle_frames):
+def end_episode(ego_vehicle, end_point, frame, idle_frames, args):
     done = False
     if end_reached(ego_vehicle, end_point):
         print("Target reached, episode ending")
         done = True
-    elif frame >= max_frames:
+    elif frame >= args.max_frames:
         print("Maximum frames reached, episode ending")
         done = True
-    if idle_frames >= 6000:
+    if idle_frames >= (args.max_frames / 2):
         print("Vehicle idle for too long, ending episode.")
         done = True
     elif has_collision:
@@ -54,7 +54,7 @@ def end_episode(ego_vehicle, end_point, frame, max_frames, idle_frames):
         done = True
     return done
 
-def update_data_file(episode_data, episode_count, weather, vehicle_list, args):
+def update_data_file(episode_data, episode_count, iter, vehicle_list, args):
     vehicle_str = "novehicles"
     if vehicle_list:
         vehicle_str = "vehicles"
@@ -63,15 +63,22 @@ def update_data_file(episode_data, episode_count, weather, vehicle_list, args):
     if args.noisy_agent:
         agent_str = "noisy"
 
+    route_str = ""
+    if args.collect_steer:
+        route_str = "steering_"
+    
+    if args.collect_straight:
+        route_str = "straight_"
+
     if not os.path.isdir(f'data'):
         os.makedirs(f'data')
 
-    with h5py.File(f'data/{args.town}_{weather}_{vehicle_str}_{agent_str}_episode_{episode_count + 1}.h5', 'w') as file:
+    with h5py.File(f'data/{args.town}_{args.weather}_{vehicle_str}_{agent_str}_{route_str}iter_{iter}_episode_{episode_count + 1}.h5', 'w') as file:
         for key, data_array in episode_data.items():
             data_array = np.array(data_array)
             file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
 
-def run_episode(world, weather, episode_count, ego_vehicle, agent, vehicle_list, rgb_sensor, end_point, args):
+def run_episode(world, episode_count, iter, ego_vehicle, agent, vehicle_list, rgb_sensor, end_point, args):
     global has_collision
     has_collision = False
     global has_lane_invasion
@@ -91,7 +98,7 @@ def run_episode(world, weather, episode_count, ego_vehicle, agent, vehicle_list,
     frame = 0
     idle_frames = 0
     while True:
-        if end_episode(ego_vehicle, end_point, frame, args.max_frames, idle_frames):
+        if end_episode(ego_vehicle, end_point, frame, idle_frames, args):
             break
 
         update_spectator(spectator, ego_vehicle)
@@ -111,34 +118,36 @@ def run_episode(world, weather, episode_count, ego_vehicle, agent, vehicle_list,
         else:
             idle_frames = 0
 
-        if (not agent.noise):
+                
+        if not agent.noise:
             frame_data = {
                 'image': np.array(sensor_data),
                 'controls': np.array([control.steer, control.throttle, control.brake]),
                 'speed': np.array([speed_km_h]),
                 'hlc': np.array([road_option_to_int(agent.get_next_action())])
             }
-            for key, value in frame_data.items():
-                episode_data[key].append(value)
+            if args.collect_steer:
+                if abs(control.steer) >= 0.05:
+                    for key, value in frame_data.items():
+                        episode_data[key].append(value)
+            else:
+                for key, value in frame_data.items():
+                    episode_data[key].append(value)
 
         world.tick()
         frame += 1
 
     if not has_collision and not has_lane_invasion and frame <= args.max_frames and idle_frames < 6000:
-        update_data_file(episode_data, episode_count, weather, vehicle_list, args)
+        update_data_file(episode_data, episode_count, iter, vehicle_list, args)
 
 def main(args):
-    weather_conditions = ['ClearNoon', 'CloudyNoon', 'WetNoon', 'SoftRainNoon', 'MidRainyNoon', 'HardRainNoon',
-                          'ClearNight', 'CloudyNight', 'WetNight', 'SoftRainNight', 'MidRainyNight', 'HardRainNight',
-                          'ClearSunset', 'CloudySunset', 'WetSunset', 'SoftRainSunset', 'MidRainSunset', 'HardRainSunset']
-
     world, client = init_world(args.town)
     traffic_manager = setup_traffic_manager(client)
     set_traffic_lights_green(world)
+    world.set_weather(getattr(carla.WeatherParameters, args.weather))
 
-    for weather in weather_conditions:
-        print("Current weather:", weather)
-        world.set_weather(getattr(carla.WeatherParameters, weather))
+    for iter in range(10):
+        print("Current weather:", args.weather)
         route_configs = read_routes(args.route_file)
         episode_count = min(len(route_configs), args.episodes)
 
@@ -175,32 +184,33 @@ def main(args):
                 lane_invasion_sensor.listen(lane_invasion_callback)
             setup_vehicle_for_tm(traffic_manager, ego_vehicle)
 
-            run_episode(world, weather, episode, ego_vehicle, agent, vehicle_list, rgb_sensor, end_point, args)
-            if (has_collision or has_lane_invasion) and num_tries < args.max_tries:
+            run_episode(world, episode, iter, ego_vehicle, agent, vehicle_list, rgb_sensor, end_point, args)
+            if (has_collision or has_lane_invasion):
                 num_tries += 1
                 episode -= 1
                 restart = True
-                print("Restarting ", end="")
+                print("Redoing ", end="")
             else:
                 restart = False
                 if (num_tries == args.max_tries):
-                    logging.info(f"Skipped episode: Town: {args.town} - Weather: {weather} - Route: {spawn_point_index} to {end_point_index}")
+                    logging.info(f"Skipped episode: Town: {args.town} - Weather: {args.weather} - Route: {spawn_point_index} to {end_point_index}")
             cleanup(client, ego_vehicle, vehicle_list, rgb_sensor, collision_sensor, None)
             episode += 1
-
-
     print("Simulation complete")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
     parser.add_argument('--town', type=str, default='Town01', help='CARLA town to use')
+    parser.add_argument('--weather', type=str, default='ClearNoon', help='CARLA weather conditions to use')
     parser.add_argument('--max_frames', type=int, default=600, help='Number of frames to collect per episode')
-    parser.add_argument('--episodes', type=int, default=50, help='Number of episodes to collect data for')
+    parser.add_argument('--episodes', type=int, default=16, help='Number of episodes to collect data for')
     parser.add_argument('--vehicles', type=int, default=0, help='Number of vehicles present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
-    parser.add_argument('--max_tries', type=int, default=20, help='Maximum number of tries before skipping an episode')
+    parser.add_argument('--max_tries', type=int, default=999, help='Maximum number of tries before skipping an episode')
     parser.add_argument('--noisy_agent', action="store_true", help='Use noisy agent over default agent')
     parser.add_argument('--lane_invasion', action="store_true", help='Activate lane invasion sensor')
+    parser.add_argument('--collect_steer', action="store_true", help='Only collect steering data')
+    parser.add_argument('--collect_straight', action="store_true", help='Only collect straight data')
     args = parser.parse_args()
 
     logging.basicConfig(filename='data_collection_log.log', 
