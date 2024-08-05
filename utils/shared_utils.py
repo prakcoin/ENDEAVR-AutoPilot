@@ -2,7 +2,7 @@ import carla
 import random
 import numpy as np
 import torch
-from model.AVModel import AVModel, AVModelLSTM
+from model.AVModel import AVModelLSTM
 import torch.nn.functional as F
 from torchvision.transforms import v2
 
