@@ -1,6 +1,0 @@
-51 89 0 Straight
-48 78 0 Straight
-32 83 0 Right
-167 92 0 Right
-233 125 0 Left
-200 77 0 Left
