@@ -1,7 +1,7 @@
 import carla
 
 class RGBCamera:
-    def __init__(self, world, vehicle, size_x='224', size_y='224'):
+    def __init__(self, world, vehicle, location, size_x='224', size_y='224'):
         cam_bp = world.get_blueprint_library().find('sensor.camera.rgb')
         cam_transform = carla.Transform(carla.Location(2, 0, 1))
         cam_bp.set_attribute('image_size_x', size_x)
@@ -20,9 +20,14 @@ class RGBCamera:
     def get_sensor(self):
         return self._sensor
     
-def start_camera(world, vehicle):
-    rgb_cam = RGBCamera(world, vehicle, size_x='224', size_y='224')
-    return rgb_cam
+def start_cameras(world, vehicle):
+    narrow_camera_location = carla.Location(2, 0, 1)
+    main_camera_location = carla.Location(2, 0, 1)
+    wide_camera_location = carla.Location(2, 0, 1)
+    narrow_rgb_cam = RGBCamera(world, vehicle, narrow_camera_location, size_x='224', size_y='224', fov=60)
+    main_rgb_cam = RGBCamera(world, vehicle, main_camera_location, size_x='224', size_y='224', fov=90)
+    narrow_rgb_cam = RGBCamera(world, vehicle, wide_camera_location, size_x='224', size_y='224', fov=120)
+    return [narrow_rgb_cam, main_rgb_cam, narrow_rgb_cam]
 
 def start_collision_sensor(world, vehicle):
     bp = world.get_blueprint_library().find('sensor.other.collision')

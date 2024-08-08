@@ -165,10 +165,11 @@ def read_routes(filename):
     routes = [((int(line.split()[0]), int(line.split()[1])), int(line.split()[2]), line.split()[3:]) for line in lines]
     return routes
 
-def cleanup(client, ego_vehicle, vehicles, rgb_sensor, collision_sensor, lane_invasion_sensor):
+def cleanup(client, ego_vehicle, vehicles, rgb_sensors, collision_sensor, lane_invasion_sensor):
     ego_vehicle.destroy()
     client.apply_batch([carla.command.DestroyActor(vehicle) for vehicle in vehicles])
-    rgb_sensor.get_sensor().destroy()
+    for sensor in rgb_sensors:
+        sensor.get_sensor().destroy()
     if collision_sensor:
         collision_sensor.destroy()
     if lane_invasion_sensor:

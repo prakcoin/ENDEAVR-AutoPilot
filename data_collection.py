@@ -8,7 +8,7 @@ from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle
                                 spawn_ego_vehicle, spawn_vehicles, create_route, to_rgb, 
                                 road_option_to_int, cleanup, update_spectator, read_routes, 
                                 set_traffic_lights_green, CropCustom)
-from utils.sensors import start_camera, start_collision_sensor, start_lane_invasion_sensor
+from utils.sensors import start_cameras, start_collision_sensor, start_lane_invasion_sensor
 from utils.agents import NoisyTrafficManagerAgent, DefaultTrafficManagerAgent
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
@@ -78,7 +78,7 @@ def update_data_file(episode_data, episode_count, iter, vehicle_list, args):
             data_array = np.array(data_array)
             file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
 
-def run_episode(world, episode_count, iter, ego_vehicle, agent, vehicle_list, rgb_sensor, end_point, args):
+def run_episode(world, episode_count, iter, ego_vehicle, agent, vehicle_list, rgb_sensors, end_point, args):
     global has_collision
     has_collision = False
     global has_lane_invasion
@@ -107,8 +107,10 @@ def run_episode(world, episode_count, iter, ego_vehicle, agent, vehicle_list, rg
         if noisy_control:
             ego_vehicle.apply_control(noisy_control)
 
-        sensor_data = to_rgb(rgb_sensor.get_sensor_data())
-        sensor_data = CropCustom()(sensor_data)
+        narrow_sensor_data = to_rgb(rgb_sensors[0].get_sensor_data())
+        main_sensor_data = to_rgb(rgb_sensors[1].get_sensor_data())
+        wide_sensor_data = to_rgb(rgb_sensors[2].get_sensor_data())
+        #sensor_data = CropCustom()(sensor_data)
 
         velocity = ego_vehicle.get_velocity()
         speed_km_h = (3.6 * np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2))
@@ -118,10 +120,11 @@ def run_episode(world, episode_count, iter, ego_vehicle, agent, vehicle_list, rg
         else:
             idle_frames = 0
 
-                
         if not agent.noise:
             frame_data = {
-                'image': np.array(sensor_data),
+                'center_image': np.array(narrow_sensor_data),
+                'left_image': np.array(main_sensor_data),
+                'right_image': np.array(wide_sensor_data),
                 'controls': np.array([control.steer, control.throttle, control.brake]),
                 'speed': np.array([speed_km_h]),
                 'hlc': np.array([road_option_to_int(agent.get_next_action())])
@@ -149,7 +152,8 @@ def main(args):
     for iter in range(args.iterations):
         print("Current weather:", args.weather)
         route_configs = read_routes(args.route_file)
-        episode_count = min(len(route_configs), args.episodes)
+        #episode_count = min(len(route_configs), args.episodes)
+        episode_count = args.episodes
 
         vehicle_list = []
         restart = False
@@ -176,7 +180,7 @@ def main(args):
             if (args.vehicles > 0):
                 vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
 
-            rgb_sensor = start_camera(world, ego_vehicle)
+            rgb_sensors = start_cameras(world, ego_vehicle)
             collision_sensor = start_collision_sensor(world, ego_vehicle)
             collision_sensor.listen(collision_callback)
             if args.lane_invasion:
@@ -184,17 +188,17 @@ def main(args):
                 lane_invasion_sensor.listen(lane_invasion_callback)
             setup_vehicle_for_tm(traffic_manager, ego_vehicle)
 
-            run_episode(world, episode, iter, ego_vehicle, agent, vehicle_list, rgb_sensor, end_point, args)
+            run_episode(world, episode, iter, ego_vehicle, agent, vehicle_list, rgb_sensors, end_point, args)
             if (has_collision or has_lane_invasion):
-                num_tries += 1
+            #     num_tries += 1
                 episode -= 1
-                restart = True
-                print("Redoing ", end="")
-            else:
-                restart = False
-                if (num_tries == args.max_tries):
-                    logging.info(f"Skipped episode: Town: {args.town} - Weather: {args.weather} - Route: {spawn_point_index} to {end_point_index}")
-            cleanup(client, ego_vehicle, vehicle_list, rgb_sensor, collision_sensor, None)
+            #     restart = True
+            #     print("Redoing ", end="")
+            # else:
+            #     restart = False
+            #     if (num_tries == args.max_tries):
+            #         logging.info(f"Skipped episode: Town: {args.town} - Weather: {args.weather} - Route: {spawn_point_index} to {end_point_index}")
+            cleanup(client, ego_vehicle, vehicle_list, rgb_sensors, collision_sensor, None)
             episode += 1
     print("Simulation complete")
 
@@ -202,11 +206,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
     parser.add_argument('--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('--weather', type=str, default='ClearNoon', help='CARLA weather conditions to use')
-    parser.add_argument('--max_frames', type=int, default=600, help='Number of frames to collect per episode')
-    parser.add_argument('--episodes', type=int, default=16, help='Number of episodes to collect data for')
+    parser.add_argument('--max_frames', type=int, default=1000, help='Number of frames to collect per episode')
+    parser.add_argument('--episodes', type=int, default=200, help='Number of episodes to collect data for')
     parser.add_argument('--iterations', type=int, default=1, help='Number of iterations to run for')
-    parser.add_argument('--vehicles', type=int, default=0, help='Number of vehicles present')
-    parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
+    parser.add_argument('--vehicles', type=int, default=50, help='Number of vehicles present')
+    parser.add_argument('--route_file', type=str, default='routes/Town01_Train_All.txt', help='Filepath for route file')
     parser.add_argument('--max_tries', type=int, default=999, help='Maximum number of tries before skipping an episode')
     parser.add_argument('--noisy_agent', action="store_true", help='Use noisy agent over default agent')
     parser.add_argument('--lane_invasion', action="store_true", help='Activate lane invasion sensor')
