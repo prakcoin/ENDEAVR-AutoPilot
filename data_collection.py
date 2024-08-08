@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import h5py
 import carla
+import matplotlib.pyplot as plt
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
                                 spawn_ego_vehicle, spawn_vehicles, create_route, to_rgb, 
                                 road_option_to_int, cleanup, update_spectator, read_routes, 
@@ -86,10 +87,13 @@ def run_episode(world, episode_count, iter, ego_vehicle, agent, vehicle_list, rg
     has_lane_invasion = False
 
     episode_data = {
-        'image': [],
+        'narrow_image': [],
+        'main_image': [],
+        'wide_image': [],
         'controls': [],
         'speed': [],
         'hlc': [],
+        'light': [],
     }
 
     spectator = world.get_spectator()
@@ -123,9 +127,9 @@ def run_episode(world, episode_count, iter, ego_vehicle, agent, vehicle_list, rg
 
         if not agent.noise:
             frame_data = {
-                'center_image': np.array(narrow_sensor_data),
-                'left_image': np.array(main_sensor_data),
-                'right_image': np.array(wide_sensor_data),
+                'narrow_image': np.array(narrow_sensor_data),
+                'main_image': np.array(main_sensor_data),
+                'wide_image': np.array(wide_sensor_data),
                 'controls': np.array([control.steer, control.throttle, control.brake]),
                 'speed': np.array([speed_km_h]),
                 'hlc': np.array([road_option_to_int(agent.get_next_action())]),
