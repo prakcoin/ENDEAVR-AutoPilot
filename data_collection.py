@@ -148,7 +148,7 @@ def run_episode(world, episode_count, iter, ego_vehicle, agent, vehicle_list, rg
 def main(args):
     world, client = init_world(args.town)
     traffic_manager = setup_traffic_manager(client)
-    set_traffic_lights_green(world)
+    #set_traffic_lights_green(world)
     world.set_weather(getattr(carla.WeatherParameters, args.weather))
 
     for iter in range(args.iterations):
