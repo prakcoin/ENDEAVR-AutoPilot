@@ -29,8 +29,8 @@ def setup_traffic_manager(client):
 
 def setup_vehicle_for_tm(traffic_manager, ego_vehicle):
     ego_vehicle.set_autopilot(True, 8000)
-    traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
-    traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
+    # traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
+    # traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
     traffic_manager.set_desired_speed(ego_vehicle, 40)
 
 def set_red_light_time(world):
@@ -46,6 +46,22 @@ def set_traffic_lights_green(world):
         traffic_light.set_state(carla.TrafficLightState.Green)
         traffic_light.set_green_time(9999)
         traffic_light.freeze(True)
+
+def get_traffic_light_status(vehicle):
+    light_status = -1
+    if vehicle.is_at_traffic_light():
+        traffic_light = vehicle.get_traffic_light()
+        light_status = traffic_light.get_state()
+    return light_status
+
+def traffic_light_to_int(light_status):
+    light_dict = {
+        -1: 0,
+        carla.libcarla.TrafficLightState.Red: 1,
+        carla.libcarla.TrafficLightState.Green: 2,
+        carla.libcarla.TrafficLightState.Yellow: 3
+    }
+    return light_dict[light_status]
 
 def create_route(episode_configs):
     episode_config = random.choice(episode_configs)

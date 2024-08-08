@@ -7,7 +7,8 @@ import carla
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
                                 spawn_ego_vehicle, spawn_vehicles, create_route, to_rgb, 
                                 road_option_to_int, cleanup, update_spectator, read_routes, 
-                                set_traffic_lights_green, CropCustom)
+                                set_traffic_lights_green, get_traffic_light_status, traffic_light_to_int, 
+                                CropCustom)
 from utils.sensors import start_cameras, start_collision_sensor, start_lane_invasion_sensor
 from utils.agents import NoisyTrafficManagerAgent, DefaultTrafficManagerAgent
 
@@ -127,7 +128,8 @@ def run_episode(world, episode_count, iter, ego_vehicle, agent, vehicle_list, rg
                 'right_image': np.array(wide_sensor_data),
                 'controls': np.array([control.steer, control.throttle, control.brake]),
                 'speed': np.array([speed_km_h]),
-                'hlc': np.array([road_option_to_int(agent.get_next_action())])
+                'hlc': np.array([road_option_to_int(agent.get_next_action())]),
+                'light': np.array([traffic_light_to_int(get_traffic_light_status(ego_vehicle))])
             }
             if args.collect_steer:
                 if abs(control.steer) >= 0.05:
