@@ -22,10 +22,10 @@ class RGBCamera:
         return self._sensor
     
 def start_cameras(world, vehicle):
-    narrow_rgb_cam = RGBCamera(world, vehicle, size_x='224', size_y='224', fov='60')
+    # narrow_rgb_cam = RGBCamera(world, vehicle, size_x='224', size_y='224', fov='60')
     main_rgb_cam = RGBCamera(world, vehicle, size_x='224', size_y='224', fov='90')
-    wide_rgb_cam = RGBCamera(world, vehicle, size_x='224', size_y='224', fov='120')
-    return [narrow_rgb_cam, main_rgb_cam, wide_rgb_cam]
+    #wide_rgb_cam = RGBCamera(world, vehicle, size_x='224', size_y='224', fov='150')
+    return main_rgb_cam
 
 def start_collision_sensor(world, vehicle):
     bp = world.get_blueprint_library().find('sensor.other.collision')

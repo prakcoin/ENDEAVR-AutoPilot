@@ -29,8 +29,8 @@ def setup_traffic_manager(client):
 
 def setup_vehicle_for_tm(traffic_manager, ego_vehicle):
     ego_vehicle.set_autopilot(True, 8000)
-    # traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
-    # traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
+    traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
+    traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
     traffic_manager.set_desired_speed(ego_vehicle, 40)
 
 def set_red_light_time(world):
@@ -65,7 +65,7 @@ def traffic_light_to_int(light_status):
 
 def create_route(episode_configs):
     episode_config = random.choice(episode_configs)
-    episode_configs.remove(episode_config)
+    #episode_configs.remove(episode_config)
     spawn_point_index = episode_config[0][0]
     end_point_index = episode_config[0][1]
     route_length = episode_config[1]
@@ -113,7 +113,7 @@ def spawn_ego_vehicle(world, spawn_point):
 
 def spawn_vehicles(world, client, n_vehicles, traffic_manager):
     blueprints = get_actor_blueprints(world, 'vehicle.*', 'All')
-    # blueprints = [x for x in blueprints if x.get_attribute('base_type') == 'car'] # cars only
+    blueprints = [x for x in blueprints if x.get_attribute('base_type') == 'car'] # cars only
     blueprints = sorted(blueprints, key=lambda bp: bp.id)
     spawn_points = get_vehicle_spawn_points(world, n_vehicles)
 
@@ -181,11 +181,10 @@ def read_routes(filename):
     routes = [((int(line.split()[0]), int(line.split()[1])), int(line.split()[2]), line.split()[3:]) for line in lines]
     return routes
 
-def cleanup(client, ego_vehicle, vehicles, rgb_sensors, collision_sensor, lane_invasion_sensor):
+def cleanup(client, ego_vehicle, vehicles, rgb_sensor, collision_sensor, lane_invasion_sensor):
     ego_vehicle.destroy()
     client.apply_batch([carla.command.DestroyActor(vehicle) for vehicle in vehicles])
-    for sensor in rgb_sensors:
-        sensor.get_sensor().destroy()
+    rgb_sensor.get_sensor().destroy()
     if collision_sensor:
         collision_sensor.destroy()
     if lane_invasion_sensor:
