@@ -56,7 +56,7 @@ def end_episode(ego_vehicle, end_point, frame, idle_frames, args):
         done = True
     return done
 
-def update_data_file(episode_data, episode_count, iter, vehicle_list, args):
+def update_data_file(episode_data, episode_count, vehicle_list, args):
     vehicle_str = "novehicles"
     if vehicle_list:
         vehicle_str = "vehicles"
@@ -68,19 +68,16 @@ def update_data_file(episode_data, episode_count, iter, vehicle_list, args):
     route_str = ""
     if args.collect_steer:
         route_str = "steering_"
-    
-    if args.collect_straight:
-        route_str = "straight_"
 
     if not os.path.isdir(f'data'):
         os.makedirs(f'data')
 
-    with h5py.File(f'data/{args.town}_{args.weather}_{vehicle_str}_{agent_str}_{route_str}iter_{iter}_episode_{episode_count + 1}.h5', 'w') as file:
+    with h5py.File(f'data/{args.town}_{args.weather}_{vehicle_str}_{agent_str}_{route_str}episode_{episode_count + 1}.h5', 'w') as file:
         for key, data_array in episode_data.items():
             data_array = np.array(data_array)
             file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
 
-def run_episode(world, episode_count, iter, ego_vehicle, agent, vehicle_list, rgb_sensors, end_point, args):
+def run_episode(world, episode_count, ego_vehicle, agent, vehicle_list, rgb_sensors, end_point, args):
     global has_collision
     has_collision = False
     global has_lane_invasion
@@ -140,66 +137,63 @@ def run_episode(world, episode_count, iter, ego_vehicle, agent, vehicle_list, rg
         world.tick()
         frame += 1
 
-    if not has_collision and not has_lane_invasion and frame <= args.max_frames and idle_frames < 6000:
-        update_data_file(episode_data, episode_count, iter, vehicle_list, args)
+    if not has_collision and not has_lane_invasion and frame <= args.max_frames and idle_frames < (args.max_frames / 2):
+        update_data_file(episode_data, episode_count, vehicle_list, args)
 
 def main(args):
     world, client = init_world(args.town)
     traffic_manager = setup_traffic_manager(client)
     #set_traffic_lights_green(world)
     world.set_weather(getattr(carla.WeatherParameters, args.weather))
+    route_configs = read_routes(args.route_file)
+    #episode_count = min(len(route_configs), args.episodes)
+    episode_count = args.episodes
 
-    for iter in range(args.iterations):
-        print("Current weather:", args.weather)
-        route_configs = read_routes(args.route_file)
-        #episode_count = min(len(route_configs), args.episodes)
-        episode_count = args.episodes
+    vehicle_list = []
+    restart = False
+    episode = 0
+    while episode < episode_count:
+        print(f'Episode: {episode + 1}')
+        if not restart:
+            num_tries = 0
+            spawn_point_index, end_point_index, _, route = create_route(route_configs)
+        
+        spawn_points = world.get_map().get_spawn_points()
+        spawn_point = spawn_points[spawn_point_index]
+        end_point = spawn_points[end_point_index]
 
-        vehicle_list = []
-        restart = False
-        episode = 0
-        while episode < episode_count:
-            print(f'Episode: {episode + 1}')
-            if not restart:
-                num_tries = 0
-                spawn_point_index, end_point_index, _, route = create_route(route_configs)
-            
-            spawn_points = world.get_map().get_spawn_points()
-            spawn_point = spawn_points[spawn_point_index]
-            end_point = spawn_points[end_point_index]
+        print(f"Route from spawn point #{spawn_point_index} to #{end_point_index}")
 
-            print(f"Route from spawn point #{spawn_point_index} to #{end_point_index}")
+        ego_vehicle = spawn_ego_vehicle(world, spawn_point)
+        if args.noisy_agent:
+            agent = NoisyTrafficManagerAgent(ego_vehicle, traffic_manager)
+        else:
+            agent = DefaultTrafficManagerAgent(ego_vehicle, traffic_manager)
+        agent.set_route(route, end_point)
 
-            ego_vehicle = spawn_ego_vehicle(world, spawn_point)
-            if args.noisy_agent:
-                agent = NoisyTrafficManagerAgent(ego_vehicle, traffic_manager)
-            else:
-                agent = DefaultTrafficManagerAgent(ego_vehicle, traffic_manager)
-            agent.set_route(route, end_point)
+        if (args.vehicles > 0):
+            vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
 
-            if (args.vehicles > 0):
-                vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
+        rgb_sensor = start_cameras(world, ego_vehicle)
+        collision_sensor = start_collision_sensor(world, ego_vehicle)
+        collision_sensor.listen(collision_callback)
+        if args.lane_invasion:
+            lane_invasion_sensor = start_lane_invasion_sensor(world, ego_vehicle)
+            lane_invasion_sensor.listen(lane_invasion_callback)
+        setup_vehicle_for_tm(traffic_manager, ego_vehicle)
 
-            rgb_sensor = start_cameras(world, ego_vehicle)
-            collision_sensor = start_collision_sensor(world, ego_vehicle)
-            collision_sensor.listen(collision_callback)
-            if args.lane_invasion:
-                lane_invasion_sensor = start_lane_invasion_sensor(world, ego_vehicle)
-                lane_invasion_sensor.listen(lane_invasion_callback)
-            setup_vehicle_for_tm(traffic_manager, ego_vehicle)
-
-            run_episode(world, episode, iter, ego_vehicle, agent, vehicle_list, rgb_sensor, end_point, args)
-            if (has_collision or has_lane_invasion):
-            #     num_tries += 1
-                episode -= 1
-            #     restart = True
-            #     print("Redoing ", end="")
-            # else:
-            #     restart = False
-            #     if (num_tries == args.max_tries):
-            #         logging.info(f"Skipped episode: Town: {args.town} - Weather: {args.weather} - Route: {spawn_point_index} to {end_point_index}")
-            cleanup(client, ego_vehicle, vehicle_list, rgb_sensor, collision_sensor, None)
-            episode += 1
+        run_episode(world, episode, ego_vehicle, agent, vehicle_list, rgb_sensor, end_point, args)
+        if (has_collision or has_lane_invasion):
+        #     num_tries += 1
+            episode -= 1
+        #     restart = True
+        #     print("Redoing ", end="")
+        # else:
+        #     restart = False
+        #     if (num_tries == args.max_tries):
+        #         logging.info(f"Skipped episode: Town: {args.town} - Weather: {args.weather} - Route: {spawn_point_index} to {end_point_index}")
+        cleanup(client, ego_vehicle, vehicle_list, rgb_sensor, collision_sensor, None)
+        episode += 1
     print("Simulation complete")
 
 if __name__ == '__main__':
@@ -208,14 +202,11 @@ if __name__ == '__main__':
     parser.add_argument('--weather', type=str, default='ClearNoon', help='CARLA weather conditions to use')
     parser.add_argument('--max_frames', type=int, default=2000, help='Number of frames to collect per episode')
     parser.add_argument('--episodes', type=int, default=200, help='Number of episodes to collect data for')
-    parser.add_argument('--iterations', type=int, default=1, help='Number of iterations to run for')
     parser.add_argument('--vehicles', type=int, default=50, help='Number of vehicles present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
-    parser.add_argument('--max_tries', type=int, default=999, help='Maximum number of tries before skipping an episode')
     parser.add_argument('--noisy_agent', action="store_true", help='Use noisy agent over default agent')
     parser.add_argument('--lane_invasion', action="store_true", help='Activate lane invasion sensor')
     parser.add_argument('--collect_steer', action="store_true", help='Only collect steering data')
-    parser.add_argument('--collect_straight', action="store_true", help='Only collect straight data')
     args = parser.parse_args()
 
     # logging.basicConfig(filename='data_collection_log.log', 
