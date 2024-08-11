@@ -12,7 +12,7 @@ from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle
                                 road_option_to_int, cleanup, update_spectator, read_routes, 
                                 set_traffic_lights_green, get_traffic_light_status, traffic_light_to_int, 
                                 load_model, model_control, calculate_delta_yaw, CropCustom)
-from utils.sensors import start_cameras, start_collision_sensor, start_lane_invasion_sensor
+from utils.sensors import start_camera, start_collision_sensor, start_lane_invasion_sensor
 from utils.agents import DefaultTrafficManagerAgent
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
@@ -83,9 +83,14 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
     for _ in range(10):
         world.tick()
 
+    map = world.get_map()
+    prev_hlc = 0
     frame = 0
     idle_frames = 0
     cur_driver_count = 0
+    prev_hlc = 0
+    prev_yaw = 0
+    delta_yaw = 0
     turning_infraction = False
     autopilot = False
     while True:
@@ -141,11 +146,17 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
             delta_yaw = 0
         
         prev_hlc = hlc
+
+        light_status = -1
+        if ego_vehicle.is_at_traffic_light():
+            traffic_light = ego_vehicle.get_traffic_light()
+            light_status = traffic_light.get_state()
+        light = traffic_light_to_int(light_status)
         
         if autopilot:
             control, _ = agent.run_step()
         else:
-            control = model_control(sensor_data, hlc, speed_km_h, model, device)
+            control = model_control(sensor_data, hlc, speed_km_h, light, model, device)
         ego_vehicle.apply_control(control)
 
         # switch between autopilot and model
@@ -160,7 +171,7 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
                 'controls': np.array([control.steer, control.throttle, control.brake]),
                 'speed': np.array([speed_km_h]),
                 'hlc': np.array([hlc]),
-                'light': np.array([traffic_light_to_int(get_traffic_light_status(ego_vehicle))])
+                'light': np.array([light])
             }
             for key, value in frame_data.items():
                 episode_data[key].append(value)
@@ -205,7 +216,7 @@ def main(args):
         if (args.vehicles > 0):
             vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
 
-        rgb_sensor = start_cameras(world, ego_vehicle)
+        rgb_sensor = start_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
         if args.lane_invasion:
@@ -213,7 +224,7 @@ def main(args):
             lane_invasion_sensor.listen(lane_invasion_callback)
         setup_vehicle_for_tm(traffic_manager, ego_vehicle)
 
-        run_episode(world, episode, ego_vehicle, model, agent, vehicle_list, rgb_sensor, end_point, device, args)
+        run_episode(world, episode, ego_vehicle, model, agent, route, vehicle_list, rgb_sensor, end_point, device, args)
         if (has_collision or has_lane_invasion):
             episode -= 1
         cleanup(client, ego_vehicle, vehicle_list, rgb_sensor, collision_sensor, None)
@@ -225,8 +236,8 @@ if __name__ == '__main__':
     parser.add_argument('--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('--weather', type=str, default='ClearNoon', help='CARLA weather conditions to use')
     parser.add_argument('--max_frames', type=int, default=2000, help='Number of frames to collect per episode')
-    parser.add_argument('--model', type=str, default='av_model_lstm.pt', help='Name of saved model')
-    parser.add_argument('--episodes', type=int, default=5, help='Number of episodes to collect data for')
+    parser.add_argument('--model', type=str, default='av_model_2.pt', help='Name of saved model')
+    parser.add_argument('--episodes', type=int, default=8, help='Number of episodes to collect data for')
     parser.add_argument('--vehicles', type=int, default=50, help='Number of vehicles present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
     parser.add_argument('--lane_invasion', action="store_true", help='Activate lane invasion sensor')
