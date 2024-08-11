@@ -181,6 +181,14 @@ def read_routes(filename):
     routes = [((int(line.split()[0]), int(line.split()[1])), int(line.split()[2]), line.split()[3:]) for line in lines]
     return routes
 
+def calculate_delta_yaw(prev_yaw, cur_yaw):
+    delta_yaw = cur_yaw - prev_yaw
+    if delta_yaw > 180:
+        delta_yaw -= 360
+    elif delta_yaw < -180:
+        delta_yaw += 360
+    return delta_yaw
+
 def cleanup(client, ego_vehicle, vehicles, rgb_sensor, collision_sensor, lane_invasion_sensor):
     ego_vehicle.destroy()
     client.apply_batch([carla.command.DestroyActor(vehicle) for vehicle in vehicles])
