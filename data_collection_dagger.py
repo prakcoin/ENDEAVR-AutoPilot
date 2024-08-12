@@ -47,7 +47,7 @@ def end_episode(ego_vehicle, end_point, frame, idle_frames, args):
     elif frame >= args.max_frames:
         print("Maximum frames reached, episode ending")
         done = True
-    if idle_frames >= (args.max_frames / 2):
+    elif idle_frames >= 100:
         print("Vehicle idle for too long, ending episode.")
         done = True
     return done
@@ -105,7 +105,7 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
         velocity = ego_vehicle.get_velocity()
         speed_km_h = (3.6 * np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2))
 
-        if speed_km_h == 0.0:
+        if speed_km_h < 1.0:
             idle_frames += 1
         else:
             idle_frames = 0
@@ -147,6 +147,12 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
         
         prev_hlc = hlc
 
+        frame_data = {
+            'image': np.array(sensor_data),
+            'speed': np.array([speed_km_h]),
+            'hlc': np.array([hlc]),
+        }
+
         light_status = -1
         if ego_vehicle.is_at_traffic_light():
             traffic_light = ego_vehicle.get_traffic_light()
@@ -179,8 +185,7 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
         world.tick()
         frame += 1
 
-    if not has_collision and not has_lane_invasion and frame <= args.max_frames and idle_frames < 6000:
-        update_data_file(episode_data, episode_count, vehicle_list, args)
+    update_data_file(episode_data, episode_count, vehicle_list, args)
 
 def main(args):
     world, client = init_world(args.town)
@@ -225,8 +230,6 @@ def main(args):
         setup_vehicle_for_tm(traffic_manager, ego_vehicle)
 
         run_episode(world, episode, ego_vehicle, model, agent, route, vehicle_list, rgb_sensor, end_point, device, args)
-        if (has_collision or has_lane_invasion):
-            episode -= 1
         cleanup(client, ego_vehicle, vehicle_list, rgb_sensor, collision_sensor, None)
         episode += 1
     print("Simulation complete")
@@ -236,7 +239,7 @@ if __name__ == '__main__':
     parser.add_argument('--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('--weather', type=str, default='ClearNoon', help='CARLA weather conditions to use')
     parser.add_argument('--max_frames', type=int, default=2000, help='Number of frames to collect per episode')
-    parser.add_argument('--model', type=str, default='av_model_2.pt', help='Name of saved model')
+    parser.add_argument('--model', type=str, default='av_model.pt', help='Name of saved model')
     parser.add_argument('--episodes', type=int, default=8, help='Number of episodes to collect data for')
     parser.add_argument('--vehicles', type=int, default=50, help='Number of vehicles present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')

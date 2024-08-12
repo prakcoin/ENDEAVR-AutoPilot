@@ -10,7 +10,7 @@ from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle
                                 road_option_to_int, cleanup, update_spectator, read_routes, 
                                 set_traffic_lights_green, get_traffic_light_status, traffic_light_to_int, 
                                 CropCustom)
-from utils.sensors import start_cameras, start_collision_sensor, start_lane_invasion_sensor
+from utils.sensors import start_camera, start_collision_sensor, start_lane_invasion_sensor
 from utils.agents import NoisyTrafficManagerAgent, DefaultTrafficManagerAgent
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
@@ -45,7 +45,7 @@ def end_episode(ego_vehicle, end_point, frame, idle_frames, args):
     elif frame >= args.max_frames:
         print("Maximum frames reached, episode ending")
         done = True
-    if idle_frames >= (args.max_frames / 2):
+    elif idle_frames >= 200:
         print("Vehicle idle for too long, ending episode.")
         done = True
     elif has_collision:
@@ -174,7 +174,7 @@ def main(args):
         if (args.vehicles > 0):
             vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
 
-        rgb_sensor = start_cameras(world, ego_vehicle)
+        rgb_sensor = start_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
         if args.lane_invasion:
@@ -201,7 +201,7 @@ if __name__ == '__main__':
     parser.add_argument('--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('--weather', type=str, default='ClearNoon', help='CARLA weather conditions to use')
     parser.add_argument('--max_frames', type=int, default=2000, help='Number of frames to collect per episode')
-    parser.add_argument('--episodes', type=int, default=200, help='Number of episodes to collect data for')
+    parser.add_argument('--episodes', type=int, default=100, help='Number of episodes to collect data for')
     parser.add_argument('--vehicles', type=int, default=50, help='Number of vehicles present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
     parser.add_argument('--noisy_agent', action="store_true", help='Use noisy agent over default agent')
