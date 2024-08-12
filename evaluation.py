@@ -5,7 +5,7 @@ import carla
 import logging
 import numpy as np
 from utils.sensors import start_camera, start_collision_sensor, start_lane_invasion_sensor
-from utils.shared_utils import (init_world, read_routes, create_route,
+from utils.shared_utils import (init_world, read_routes, create_route, traffic_light_to_int,
                                 spawn_ego_vehicle, spawn_vehicles, setup_traffic_manager, 
                                 cleanup, update_spectator, to_rgb, CropCustom,
                                 model_control, load_model)
@@ -71,10 +71,14 @@ def run_episode(world, model, device, ego_vehicle, rgb_sensor, end_point, route,
 
     frame = 0
     idle_frames = 0
+    running_light = False
     while True:
         if end_episode(ego_vehicle, end_point, frame, max_frames, idle_frames):
             break
         
+        transform = ego_vehicle.get_transform()
+        vehicle_location = transform.location
+
         velocity = ego_vehicle.get_velocity()
         speed_m_s = np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2)
         speed_km_h = 3.6 * speed_m_s
@@ -88,9 +92,22 @@ def run_episode(world, model, device, ego_vehicle, rgb_sensor, end_point, route,
 
         update_spectator(spectator, ego_vehicle)
         sensor_data = to_rgb(rgb_sensor.get_sensor_data())
-        sensor_data = np.array(CropCustom()(sensor_data))
+        sensor_data = np.array(sensor_data)
 
-        control = model_control(sensor_data, hlc, speed_km_h, model, device)
+        light_status = -1
+        if ego_vehicle.is_at_traffic_light():
+            traffic_light = ego_vehicle.get_traffic_light()
+            light_status = traffic_light.get_state()
+            traffic_light_location = traffic_light.get_transform().location
+            distance_to_traffic_light = np.sqrt((vehicle_location.x - traffic_light_location.x)**2 + (vehicle_location.y - traffic_light_location.y)**2)
+            if light_status == carla.libcarla.TrafficLightState.Red and distance_to_traffic_light < 6 and speed_m_s > 5:
+                if not running_light:
+                    running_light = True
+            else:
+                running_light = False
+        light = np.array([traffic_light_to_int(light_status)])
+
+        control = model_control(sensor_data, hlc, speed_km_h, light, model, device)
         ego_vehicle.apply_control(control)
         dist_tracker.update(ego_vehicle)
         world.tick()
@@ -161,9 +178,9 @@ if __name__ == '__main__':
     parser.add_argument('--weather', type=str, default='ClearNoon', help='Weather condition to set')
     parser.add_argument('--max_frames', type=int, default=5000, help='Number of frames to collect per episode')
     parser.add_argument('--episodes', type=int, default=12, help='Number of episodes to evaluate for')
-    parser.add_argument('--vehicles', type=int, default=0, help='Number of vehicles present')
+    parser.add_argument('--vehicles', type=int, default=50, help='Number of vehicles present')
     parser.add_argument('--route_file', type=str, default='routes/Town02_All.txt', help='Filepath for route file')
-    parser.add_argument('--model', type=str, default='av_model_lstm.pt', help='Name of saved model')
+    parser.add_argument('--model', type=str, default='av_model.pt', help='Name of saved model')
     args = parser.parse_args()
     
     logging.basicConfig(filename='evaluation_log.log', 

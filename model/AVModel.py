@@ -10,23 +10,22 @@ class AVModelLSTM(nn.Module):
         self.input_layer = nn.Conv2d(3, 8, kernel_size=5, padding=1, stride=4, padding_mode='reflect')
 
         self.norm = nn.LayerNorm(8)
-        self.attention = nn.MultiheadAttention(embed_dim=8, num_heads=1, batch_first=True, dropout=0.5)
+        self.attention = nn.MultiheadAttention(embed_dim=8, num_heads=1, batch_first=True)
         self.scale = nn.Parameter(torch.zeros(1))
         self.act = nn.ReLU()
 
         self.conv_layers = nn.Sequential(
-            ResidualBlock(in_channels=8, out_channels=8, kernel_size=3, stride=1, num_layers=2),
-            ResidualBlock(in_channels=8, out_channels=16, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=16, out_channels=32, kernel_size=3, stride=1, num_layers=2),
-            ResidualBlock(in_channels=32, out_channels=64, kernel_size=3, stride=2, num_layers=2),
-            nn.Dropout2d(0.5),
+            ResidualBlock(in_channels=8, out_channels=8, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=8, out_channels=8, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=8, out_channels=16, kernel_size=3, stride=1, num_layers=2),
+            ResidualBlock(in_channels=16, out_channels=16, kernel_size=3, stride=1, num_layers=2),
+            nn.Dropout2d(0.2),
         )
 
-        self.conv_lstm = ConvLSTM(input_dim=64, hidden_dim=64, kernel_size=(5, 5), num_layers=3, batch_first=True, bias=True, return_all_layers=False)
-        self.dropout = nn.Dropout2d(0.5)
-        
+        self.conv_lstm = ConvLSTM(input_dim=16, hidden_dim=16, kernel_size=(5, 5), num_layers=3, batch_first=True, bias=True, return_all_layers=False)
+
         self.dense_layers = nn.Sequential(
-            nn.Linear(6277, 50),
+            nn.Linear(3753, 50),
             nn.ReLU(),
             nn.Linear(50, 10),
             nn.ReLU(),
@@ -44,7 +43,7 @@ class AVModelLSTM(nn.Module):
         x = self.scale * attention_output + x
         return x
 
-    def forward(self, img, hlc, speed):
+    def forward(self, img, hlc, speed, light):
         x = self.input_layer(img)
         x = self.use_attention(x)
         x = self.act(x)
@@ -54,13 +53,13 @@ class AVModelLSTM(nn.Module):
 
         _, last_states = self.conv_lstm(x)
         x =  last_states[0][0]
-        x = self.dropout(x)
 
         #x = torch.mean(x.view(x.size(0), x.size(1), -1), dim=2) # GlobalAveragePooling2D
         x = x.reshape(x.size(0), -1)
-        speed = speed.view(speed.size(0), -1)
         hlc = hlc.view(hlc.size(0), -1)
-        x = torch.cat((x, hlc, speed), dim=1)
+        speed = speed.view(speed.size(0), -1)
+        light = light.view(light.size(0), -1)
+        x = torch.cat((x, hlc, speed, light), dim=1)
 
         x = self.dense_layers(x)
         x = self.output_layer(x)
