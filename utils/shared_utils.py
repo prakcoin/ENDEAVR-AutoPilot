@@ -241,7 +241,7 @@ def model_control(image, hlc, speed, light, model, device):
         output = model(input_tensor, hlc, speed, light)
     
     output = output.detach().cpu().numpy().flatten()
-    steer, throttle_brake = output
+    throttle_brake, steer = output
     throttle_brake = float(throttle_brake)
     throttle, brake = 0.0, 0.0
     if throttle_brake >= 0.5:
