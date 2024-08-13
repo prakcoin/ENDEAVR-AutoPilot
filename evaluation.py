@@ -50,6 +50,7 @@ def end_reached(ego_vehicle, end_point):
     return distance < 1.0
 
 def end_episode(ego_vehicle, end_point, frame, max_frames, idle_frames, turning_infraction):
+    global num_timeouts
     done = False
     if end_reached(ego_vehicle, end_point):
         logging.info("Target reached, episode ending")
@@ -58,7 +59,7 @@ def end_episode(ego_vehicle, end_point, frame, max_frames, idle_frames, turning_
         logging.info("Maximum frames reached, episode ending")
         num_timeouts += 1
         done = True
-    elif idle_frames >= 600:
+    elif idle_frames >= 500:
         logging.info("Vehicle idle for too long, episode ending")
         num_timeouts += 1
         done = True
@@ -68,7 +69,7 @@ def end_episode(ego_vehicle, end_point, frame, max_frames, idle_frames, turning_
     return done
 
 def check_collision(prev_collision):
-    global has_collision, collision_type
+    global has_collision, collision_type, num_other_collisions
     if has_collision:
         if not prev_collision:
             if collision_type == carla.libcarla.Vehicle:
@@ -120,7 +121,7 @@ def run_episode(world, model, device, ego_vehicle, rgb_sensor, end_point, route,
         speed_m_s = np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2)
         speed_km_h = 3.6 * speed_m_s
 
-        if speed_km_h == 0.0:
+        if speed_km_h < 1.0:
             idle_frames += 1
         else:
             idle_frames = 0
@@ -173,7 +174,7 @@ def run_episode(world, model, device, ego_vehicle, rgb_sensor, end_point, route,
         world.tick()
         frame += 1
 
-    if not has_collision and frame <= max_frames:
+    if end_reached(ego_vehicle, end_point):
         logging.info("Route completion: 1.0")
         return True, 1.0
 
