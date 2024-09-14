@@ -25,6 +25,8 @@ def setup_traffic_manager(client):
     traffic_manager = client.get_trafficmanager(8000)
     traffic_manager.set_synchronous_mode(True)
     traffic_manager.set_global_distance_to_leading_vehicle(2.5)
+    traffic_manager.set_hybrid_physics_mode(True)
+    traffic_manager.set_hybrid_physics_radius(70.0)
     return traffic_manager
 
 def setup_vehicle_for_tm(traffic_manager, ego_vehicle):
@@ -189,14 +191,10 @@ def calculate_delta_yaw(prev_yaw, cur_yaw):
         delta_yaw += 360
     return delta_yaw
 
-def cleanup(client, ego_vehicle, vehicles, rgb_sensor, collision_sensor, lane_invasion_sensor):
+def cleanup(client, ego_vehicle, vehicles, sensors):
     ego_vehicle.destroy()
     client.apply_batch([carla.command.DestroyActor(vehicle) for vehicle in vehicles])
-    rgb_sensor.get_sensor().destroy()
-    if collision_sensor:
-        collision_sensor.destroy()
-    if lane_invasion_sensor:
-        lane_invasion_sensor.destroy()
+    for sensor in sensors: sensor.destroy()
 
 class CropCustom(object):
     def __call__(self, img):
@@ -214,10 +212,15 @@ def load_model(model_path, device):
     model.eval()
     return model
 
-def model_control(image, hlc, speed, light, model, device):
-    input_tensor = torch.tensor(image).permute(2, 0, 1)
-    input_tensor = input_tensor / 255.0
-    input_tensor = v2.Normalize(mean=(0.7548, 0.7418, 0.7100,), std=(0.1905, 0.1858, 0.1949,))(input_tensor)
+def model_control(main_image, wide_image, hlc, speed, light, model, device):
+    main_tensor = torch.tensor(main_image).permute(2, 0, 1)
+    main_tensor = main_tensor / 255.0
+
+    wide_tensor = torch.tensor(wide_image).permute(2, 0, 1)
+    wide_tensor = wide_tensor / 255.0
+
+    input_tensor = torch.cat((main_tensor, wide_tensor), dim=0)
+    input_tensor = v2.Normalize(mean=(0.7309, 0.7063, 0.6706, 0.6635, 0.6541, 0.6407,), std=(0.2297, 0.2295, 0.2319, 0.2309, 0.2232, 0.2140,))(input_tensor)
     input_tensor = input_tensor.unsqueeze(0)
 
     hlc = torch.tensor(hlc, dtype=torch.long)

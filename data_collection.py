@@ -77,14 +77,15 @@ def update_data_file(episode_data, episode_count, vehicle_list, args):
             data_array = np.array(data_array)
             file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
 
-def run_episode(world, episode_count, ego_vehicle, agent, vehicle_list, rgb_sensors, end_point, args):
+def run_episode(world, episode_count, ego_vehicle, agent, vehicle_list, main_rgb_cam, wide_rgb_cam, end_point, args):
     global has_collision
     has_collision = False
     global has_lane_invasion
     has_lane_invasion = False
 
     episode_data = {
-        'image': [],
+        'main_rgb': [],
+        'wide_rgb': [],
         'controls': [],
         'speed': [],
         'hlc': [],
@@ -107,8 +108,8 @@ def run_episode(world, episode_count, ego_vehicle, agent, vehicle_list, rgb_sens
         if noisy_control:
             ego_vehicle.apply_control(noisy_control)
 
-        sensor_data = to_rgb(rgb_sensors.get_sensor_data())
-        #sensor_data = CropCustom()(sensor_data)
+        main_sensor_data = to_rgb(main_rgb_cam.get_sensor_data())
+        wide_sensor_data = to_rgb(wide_rgb_cam.get_sensor_data())
 
         velocity = ego_vehicle.get_velocity()
         speed_km_h = (3.6 * np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2))
@@ -120,7 +121,8 @@ def run_episode(world, episode_count, ego_vehicle, agent, vehicle_list, rgb_sens
 
         if not agent.noise:
             frame_data = {
-                'image': np.array(sensor_data),
+                'main_rgb': np.array(main_sensor_data),
+                'wide_rgb': np.array(wide_sensor_data),
                 'controls': np.array([control.steer, control.throttle, control.brake]),
                 'speed': np.array([speed_km_h]),
                 'hlc': np.array([road_option_to_int(agent.get_next_action())]),
@@ -143,10 +145,10 @@ def run_episode(world, episode_count, ego_vehicle, agent, vehicle_list, rgb_sens
 def main(args):
     world, client = init_world(args.town)
     traffic_manager = setup_traffic_manager(client)
-    #set_traffic_lights_green(world)
     world.set_weather(getattr(carla.WeatherParameters, args.weather))
+    world.tick()
+
     route_configs = read_routes(args.route_file)
-    #episode_count = min(len(route_configs), args.episodes)
     episode_count = args.episodes
 
     vehicle_list = []
@@ -174,15 +176,17 @@ def main(args):
         if (args.vehicles > 0):
             vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
 
-        rgb_sensor = start_camera(world, ego_vehicle)
+        main_rgb_cam, wide_rgb_cam = start_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
+        sensors = [main_rgb_cam.get_sensor(), wide_rgb_cam.get_sensor(), collision_sensor]
         if args.lane_invasion:
             lane_invasion_sensor = start_lane_invasion_sensor(world, ego_vehicle)
             lane_invasion_sensor.listen(lane_invasion_callback)
+            sensors.append(lane_invasion_sensor)
         setup_vehicle_for_tm(traffic_manager, ego_vehicle)
 
-        run_episode(world, episode, ego_vehicle, agent, vehicle_list, rgb_sensor, end_point, args)
+        run_episode(world, episode, ego_vehicle, agent, vehicle_list, main_rgb_cam, wide_rgb_cam, end_point, args)
         if (has_collision or has_lane_invasion):
         #     num_tries += 1
             episode -= 1
@@ -192,7 +196,7 @@ def main(args):
         #     restart = False
         #     if (num_tries == args.max_tries):
         #         logging.info(f"Skipped episode: Town: {args.town} - Weather: {args.weather} - Route: {spawn_point_index} to {end_point_index}")
-        cleanup(client, ego_vehicle, vehicle_list, rgb_sensor, collision_sensor, None)
+        cleanup(client, ego_vehicle, vehicle_list, sensors)
         episode += 1
     print("Simulation complete")
 
