@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
                                 spawn_ego_vehicle, spawn_vehicles, create_route, to_rgb, 
                                 road_option_to_int, cleanup, update_spectator, read_routes, 
-                                set_traffic_lights_green, get_traffic_light_status, traffic_light_to_int, 
+                                set_traffic_lights_green, get_traffic_light_status, traffic_light_to_int,
                                 load_model, model_control, calculate_delta_yaw, CropCustom)
 from utils.sensors import start_camera, start_collision_sensor, start_lane_invasion_sensor
 from utils.agents import DefaultTrafficManagerAgent
@@ -65,14 +65,15 @@ def update_data_file(episode_data, episode_count, vehicle_list, args):
             data_array = np.array(data_array)
             file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
 
-def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_list, rgb_sensors, end_point, device, args):
+def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_list, main_rgb_cam, wide_rgb_cam, end_point, device, args):
     global has_collision
     has_collision = False
     global has_lane_invasion
     has_lane_invasion = False
 
     episode_data = {
-        'image': [],
+        'main_rgb': [],
+        'wide_rgb': [],
         'controls': [],
         'speed': [],
         'hlc': [],
@@ -99,8 +100,8 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
 
         update_spectator(spectator, ego_vehicle)
     
-        sensor_data = to_rgb(rgb_sensors.get_sensor_data())
-        #sensor_data = CropCustom()(sensor_data)
+        main_sensor_data = np.array(to_rgb(main_rgb_cam.get_sensor_data()))
+        wide_sensor_data = np.array(to_rgb(wide_rgb_cam.get_sensor_data()))
 
         velocity = ego_vehicle.get_velocity()
         speed_km_h = (3.6 * np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2))
@@ -147,12 +148,6 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
         
         prev_hlc = hlc
 
-        frame_data = {
-            'image': np.array(sensor_data),
-            'speed': np.array([speed_km_h]),
-            'hlc': np.array([hlc]),
-        }
-
         light_status = -1
         if ego_vehicle.is_at_traffic_light():
             traffic_light = ego_vehicle.get_traffic_light()
@@ -162,7 +157,7 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
         if autopilot:
             control, _ = agent.run_step()
         else:
-            control = model_control(sensor_data, hlc, speed_km_h, light, model, device)
+            control = model_control(main_sensor_data, wide_sensor_data, hlc, speed_km_h, light, model, device)
         ego_vehicle.apply_control(control)
 
         # switch between autopilot and model
@@ -173,7 +168,8 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
 
         if idle_frames < 50 and autopilot:
             frame_data = {
-                'image': np.array(sensor_data),
+                'main_rgb': np.array(main_sensor_data),
+                'wide_rgb': np.array(wide_sensor_data),
                 'controls': np.array([control.steer, control.throttle, control.brake]),
                 'speed': np.array([speed_km_h]),
                 'hlc': np.array([hlc]),
@@ -191,6 +187,8 @@ def main(args):
     world, client = init_world(args.town)
     traffic_manager = setup_traffic_manager(client)
     world.set_weather(getattr(carla.WeatherParameters, args.weather))
+    world.tick()
+
     current_directory = os.getcwd()
     parent_directory = os.path.dirname(current_directory)
     model_path = os.path.join(parent_directory, 'ENDEAVR-AutoPilot', 'model', 'saved_models', args.model)
@@ -221,16 +219,18 @@ def main(args):
         if (args.vehicles > 0):
             vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
 
-        rgb_sensor = start_camera(world, ego_vehicle)
+        main_rgb_cam, wide_rgb_cam = start_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
+        sensors = [main_rgb_cam.get_sensor(), wide_rgb_cam.get_sensor(), collision_sensor]
         if args.lane_invasion:
             lane_invasion_sensor = start_lane_invasion_sensor(world, ego_vehicle)
             lane_invasion_sensor.listen(lane_invasion_callback)
+            sensors.append(lane_invasion_sensor)
         setup_vehicle_for_tm(traffic_manager, ego_vehicle)
 
-        run_episode(world, episode, ego_vehicle, model, agent, route, vehicle_list, rgb_sensor, end_point, device, args)
-        cleanup(client, ego_vehicle, vehicle_list, rgb_sensor, collision_sensor, None)
+        run_episode(world, episode, ego_vehicle, model, agent, route, vehicle_list, main_rgb_cam, wide_rgb_cam, end_point, device, args)
+        cleanup(client, ego_vehicle, vehicle_list, sensors)
         episode += 1
     print("Simulation complete")
 
