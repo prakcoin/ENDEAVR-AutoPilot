@@ -45,7 +45,7 @@ def end_episode(ego_vehicle, end_point, frame, idle_frames, args):
     elif frame >= args.max_frames:
         print("Maximum frames reached, episode ending")
         done = True
-    elif idle_frames >= 200:
+    elif idle_frames >= (args.max_frames / 2):
         print("Vehicle idle for too long, ending episode.")
         done = True
     elif has_collision:
@@ -107,8 +107,6 @@ def run_episode(world, episode_count, ego_vehicle, agent, vehicle_list, main_rgb
         control, noisy_control = agent.run_step()
         if noisy_control:
             ego_vehicle.apply_control(noisy_control)
-
-        print(control)
 
         main_sensor_data = to_rgb(main_rgb_cam.get_sensor_data())
         wide_sensor_data = to_rgb(wide_rgb_cam.get_sensor_data())
