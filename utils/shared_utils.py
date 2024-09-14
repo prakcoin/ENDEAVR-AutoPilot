@@ -106,11 +106,10 @@ def get_vehicle_spawn_points(world, n_vehicles):
     return spawn_points
 
 def spawn_ego_vehicle(world, spawn_point):
-    ego_bp = world.get_blueprint_library().find('vehicle.tesla.model3')
-    ego_bp.set_attribute('role_name', 'ego')
-    ego_color = random.choice(ego_bp.get_attribute('color').recommended_values)
-    ego_bp.set_attribute('color', ego_color)
-    ego_vehicle = world.spawn_actor(ego_bp, spawn_point)
+    blueprint_library = world.get_blueprint_library()
+    blueprint = blueprint_library.filter('model3')[0]
+    blueprint.set_attribute('role_name', 'hero')
+    ego_vehicle = world.spawn_actor(blueprint, spawn_point)
     return ego_vehicle
 
 def spawn_vehicles(world, client, n_vehicles, traffic_manager):
