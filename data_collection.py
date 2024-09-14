@@ -108,6 +108,8 @@ def run_episode(world, episode_count, ego_vehicle, agent, vehicle_list, main_rgb
         if noisy_control:
             ego_vehicle.apply_control(noisy_control)
 
+        print(control)
+
         main_sensor_data = to_rgb(main_rgb_cam.get_sensor_data())
         wide_sensor_data = to_rgb(wide_rgb_cam.get_sensor_data())
 
@@ -204,9 +206,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
     parser.add_argument('--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('--weather', type=str, default='ClearNoon', help='CARLA weather conditions to use')
-    parser.add_argument('--max_frames', type=int, default=2000, help='Number of frames to collect per episode')
+    parser.add_argument('--max_frames', type=int, default=8000, help='Number of frames to collect per episode')
     parser.add_argument('--episodes', type=int, default=100, help='Number of episodes to collect data for')
-    parser.add_argument('--vehicles', type=int, default=50, help='Number of vehicles present')
+    parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
     parser.add_argument('--noisy_agent', action="store_true", help='Use noisy agent over default agent')
     parser.add_argument('--lane_invasion', action="store_true", help='Activate lane invasion sensor')
