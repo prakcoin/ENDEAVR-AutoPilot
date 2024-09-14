@@ -14,11 +14,11 @@ def init_world(town):
     client = carla.Client('localhost', 2000)
     client.set_timeout(20.0)
     world = client.get_world()
+    client.load_world(town)
     settings = world.get_settings()
     settings.synchronous_mode = True
     settings.fixed_delta_seconds = 0.05
     world.apply_settings(settings)
-    client.load_world(town)
     return world, client
 
 def setup_traffic_manager(client):
@@ -30,7 +30,7 @@ def setup_traffic_manager(client):
     return traffic_manager
 
 def setup_vehicle_for_tm(traffic_manager, ego_vehicle):
-    ego_vehicle.set_autopilot(True, 8000)
+    ego_vehicle.set_autopilot(True)
     traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
     traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
     traffic_manager.set_desired_speed(ego_vehicle, 40)
