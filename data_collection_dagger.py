@@ -39,16 +39,13 @@ def end_reached(ego_vehicle, end_point):
     distance = vehicle_location.distance(end_location)
     return distance < 1.0
 
-def end_episode(ego_vehicle, end_point, frame, idle_frames, args):
+def end_episode(ego_vehicle, end_point, frame, args):
     done = False
     if end_reached(ego_vehicle, end_point):
         print("Target reached, episode ending")
         done = True
     elif frame >= args.max_frames:
         print("Maximum frames reached, episode ending")
-        done = True
-    elif idle_frames >= 100:
-        print("Vehicle idle for too long, ending episode.")
         done = True
     return done
 
@@ -95,7 +92,7 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
     turning_infraction = False
     autopilot = False
     while True:
-        if end_episode(ego_vehicle, end_point, frame, idle_frames, args) or turning_infraction:
+        if end_episode(ego_vehicle, end_point, frame, args) or turning_infraction:
             break
 
         update_spectator(spectator, ego_vehicle)
