@@ -3,7 +3,7 @@ import random
 import numpy as np
 import torch
 from model.AVModel import AVModelLSTM
-from utils.vlm_utils import inference
+from utils.vlm_utils import vlm_inference
 import torch.nn.functional as F
 from torchvision.transforms import v2
 
@@ -240,46 +240,17 @@ def model_control(main_image, wide_image, hlc, speed, light, model, device):
     speed = speed.to(device)
     light = light.to(device)
 
-    enable_dropout(model)
-    mean_output, var_output = mc_dropout_inference(model, input_tensor, hlc, speed, light)
+    throttle, steer, brake = mc_dropout_inference(model, input_tensor, main_image, wide_image, hlc, speed, light)
 
-    throttle_brake_mean, steer_mean = mean_output[0]
-    throttle_brake_var, steer_var = var_output[0]
-
-    # with torch.no_grad():
-    #     output = model(input_tensor, hlc, speed, light)
-    
-    # output = output.detach().cpu().numpy().flatten()
-    # throttle_brake, steer = output
-
-    # throttle_brake = float(throttle_brake)
-    # throttle, brake = 0.0, 0.0
-    # if throttle_brake >= 0.5:
-    #     throttle = (throttle_brake - 0.5) / 0.5
-    # else:
-    #     brake = (0.5 - throttle_brake) / 0.5
-    # steer = (float(steer) * 2.0) - 1.0
-
-    throttle, brake = 0.0, 0.0
-    if throttle_brake_mean >= 0.5:
-        throttle = (throttle_brake_mean - 0.5) / 0.5
-    else:
-        brake = (0.5 - throttle_brake_mean) / 0.5
-    
-    steer_mean = (float(steer_mean) * 2.0) - 1.0
-
-    if max(throttle_brake_var, steer_var) > 0.1:
-        print("Uncertainty is high, querying VLM for expert correction...")
-        inference(main_image, wide_image, hlc, speed, light, steer_mean, brake, throttle)
-    
-    return carla.VehicleControl(throttle=throttle, steer=steer_mean, brake=brake)
+    return carla.VehicleControl(throttle=throttle, steer=steer, brake=brake)
 
 def enable_dropout(model):
     for m in model.modules():
         if isinstance(m, torch.nn.Dropout):
             m.train()
 
-def mc_dropout_inference(model, input_tensor, hlc, speed, light, num_samples=10):
+def mc_dropout_inference(model, input_tensor, main_image, wide_image, hlc, speed, light, num_samples=25):
+    enable_dropout(model)
     predictions = []
 
     for _ in range(num_samples):
@@ -291,4 +262,38 @@ def mc_dropout_inference(model, input_tensor, hlc, speed, light, num_samples=10)
     mean_predictions = np.mean(predictions, axis=0)
     var_predictions = np.var(predictions, axis=0)
 
-    return mean_predictions, var_predictions
+    throttle_brake_mean, steer_mean = mean_predictions[0]
+    throttle_brake_var, steer_var = var_predictions[0]
+
+    throttle_mean, brake_mean = 0.0, 0.0
+    if throttle_brake_mean >= 0.5:
+        throttle_mean = (throttle_brake_mean - 0.5) / 0.5
+    else:
+        brake_mean = (0.5 - throttle_brake_mean) / 0.5
+    
+    steer_mean = (float(steer_mean) * 2.0) - 1.0
+
+    print(max(throttle_brake_var, steer_var))
+
+    if max(throttle_brake_var, steer_var) > 0.1:
+        print("Uncertainty is high, querying VLM for expert correction...")
+        vlm_inference(main_image, wide_image, hlc, speed, light, steer_mean, brake_mean, throttle_mean)
+
+    return throttle_mean, steer_mean, brake_mean
+
+def inference(model, input_tensor, hlc, speed, light):
+    with torch.no_grad():
+        output = model(input_tensor, hlc, speed, light)
+    
+    output = output.detach().cpu().numpy().flatten()
+    throttle_brake, steer = output
+
+    throttle_brake = float(throttle_brake)
+    throttle, brake = 0.0, 0.0
+    if throttle_brake >= 0.5:
+        throttle = (throttle_brake - 0.5) / 0.5
+    else:
+        brake = (0.5 - throttle_brake) / 0.5
+    steer = (float(steer) * 2.0) - 1.0
+
+    return throttle, steer, brake
