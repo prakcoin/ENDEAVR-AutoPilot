@@ -85,7 +85,7 @@ def check_collision(prev_collision):
     collision_type = None
     return prev_collision
 
-def run_episode(world, model, device, ego_vehicle, rgb_sensor, end_point, route, route_length, max_frames):
+def run_episode(world, model, device, ego_vehicle, main_rgb_cam, wide_rgb_cam, end_point, route, route_length, max_frames):
     global has_collision, collision_type
     has_collision = False
     global num_wrong_turns
@@ -151,8 +151,8 @@ def run_episode(world, model, device, ego_vehicle, rgb_sensor, end_point, route,
         prev_hlc = hlc
 
         update_spectator(spectator, ego_vehicle)
-        sensor_data = to_rgb(rgb_sensor.get_sensor_data())
-        sensor_data = np.array(sensor_data)
+        main_sensor_data = np.array(to_rgb(main_rgb_cam.get_sensor_data()))
+        wide_sensor_data = np.array(to_rgb(wide_rgb_cam.get_sensor_data()))
 
         light_status = -1
         if ego_vehicle.is_at_traffic_light():
@@ -168,7 +168,7 @@ def run_episode(world, model, device, ego_vehicle, rgb_sensor, end_point, route,
                 running_light = False
         light = np.array([traffic_light_to_int(light_status)])
 
-        control = model_control(sensor_data, hlc, speed_km_h, light, model, device)
+        control = model_control(main_sensor_data, wide_sensor_data, hlc, speed_km_h, light, model, device)
         ego_vehicle.apply_control(control)
         dist_tracker.update(ego_vehicle)
         world.tick()
@@ -215,11 +215,12 @@ def main(args):
         if (args.vehicles > 0):
             vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
 
-        rgb_sensor = start_camera(world, ego_vehicle)
+        main_rgb_cam, wide_rgb_cam = start_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
+        sensors = [main_rgb_cam.get_sensor(), wide_rgb_cam.get_sensor(), collision_sensor]
 
-        episode_completed, route_completion = run_episode(world, model, device, ego_vehicle, rgb_sensor, end_point, route, route_length, args.max_frames)
+        episode_completed, route_completion = run_episode(world, model, device, ego_vehicle, main_rgb_cam, wide_rgb_cam, end_point, route, route_length, args.max_frames)
         if episode_completed:
             completed_episodes += 1
 
@@ -233,7 +234,7 @@ def main(args):
         infraction_penalties.append(infraction_penalty)
         driving_score = infraction_penalty * route_completion
         driving_scores.append(driving_score)
-        cleanup(client, ego_vehicle, vehicle_list, rgb_sensor, collision_sensor, None)
+        cleanup(client, ego_vehicle, vehicle_list, sensors)
 
     logging.info(f"Episode completion rate: {completed_episodes / episode_count}")
     logging.info(f"Average route completion: {sum(route_completions) / episode_count}")

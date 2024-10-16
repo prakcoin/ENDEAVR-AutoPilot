@@ -3,7 +3,7 @@ import random
 import numpy as np
 import torch
 from model.AVModel import AVModelLSTM
-from vlm_utils import inference
+from utils.vlm_utils import inference
 import torch.nn.functional as F
 from torchvision.transforms import v2
 
@@ -243,8 +243,8 @@ def model_control(main_image, wide_image, hlc, speed, light, model, device):
     enable_dropout(model)
     mean_output, var_output = mc_dropout_inference(model, input_tensor, hlc, speed, light)
 
-    throttle_brake_mean, steer_mean = mean_output
-    throttle_brake_var, steer_var = var_output
+    throttle_brake_mean, steer_mean = mean_output[0]
+    throttle_brake_var, steer_var = var_output[0]
 
     # with torch.no_grad():
     #     output = model(input_tensor, hlc, speed, light)
@@ -279,7 +279,7 @@ def enable_dropout(model):
         if isinstance(m, torch.nn.Dropout):
             m.train()
 
-def mc_dropout_inference(model, input_tensor, hlc, speed, light, num_samples=50):
+def mc_dropout_inference(model, input_tensor, hlc, speed, light, num_samples=10):
     predictions = []
 
     for _ in range(num_samples):
