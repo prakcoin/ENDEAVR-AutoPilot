@@ -173,14 +173,12 @@ def main(args):
 
         run_episode(world, episode, ego_vehicle, agent, vehicle_list, rgb_cam, end_point, args)
         if (has_collision or has_lane_invasion):
-        #     num_tries += 1
+            num_tries += 1
             episode -= 1
-        #     restart = True
-        #     print("Redoing ", end="")
-        # else:
-        #     restart = False
-        #     if (num_tries == args.max_tries):
-        #         logging.info(f"Skipped episode: Town: {args.town} - Weather: {args.weather} - Route: {spawn_point_index} to {end_point_index}")
+            restart = True
+            print("Redoing ", end="")
+        else:
+            restart = False
         cleanup(client, ego_vehicle, vehicle_list, sensors)
         episode += 1
     print("Simulation complete")
@@ -190,9 +188,9 @@ if __name__ == '__main__':
     parser.add_argument('--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('--weather', type=str, default='ClearNoon', help='CARLA weather conditions to use')
     parser.add_argument('--max_frames', type=int, default=8000, help='Number of frames to collect per episode')
-    parser.add_argument('--episodes', type=int, default=100, help='Number of episodes to collect data for')
+    parser.add_argument('--episodes', type=int, default=4, help='Number of episodes to collect data for')
     parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')
-    parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
+    parser.add_argument('--route_file', type=str, default='routes/Town01_Val.txt', help='Filepath for route file')
     parser.add_argument('--noisy_agent', action="store_true", help='Use noisy agent over default agent')
     parser.add_argument('--lane_invasion', action="store_true", help='Activate lane invasion sensor')
     parser.add_argument('--collect_steer', action="store_true", help='Only collect steering data')

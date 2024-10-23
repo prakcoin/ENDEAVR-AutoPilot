@@ -2,7 +2,7 @@ import carla
 import random
 import numpy as np
 import torch
-from model.AVModel import AVModelLSTM
+from model.AVModel import AVModelLSTM, CNNTransformer
 from utils.vlm_utils import vlm_inference
 import torch.nn.functional as F
 from torchvision.transforms import v2
@@ -68,7 +68,7 @@ def traffic_light_to_int(light_status):
 
 def create_route(episode_configs):
     episode_config = random.choice(episode_configs)
-    #episode_configs.remove(episode_config)
+    episode_configs.remove(episode_config)
     spawn_point_index = episode_config[0][0]
     end_point_index = episode_config[0][1]
     route_length = episode_config[1]
@@ -206,7 +206,7 @@ class CropCustom(object):
         return cropped_img
 
 def load_model(model_path, device):
-    model = AVModelLSTM()
+    model = CNNTransformer()
     model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
     model.to(device)
     model.eval()
@@ -216,7 +216,7 @@ def model_control(image, hlc, speed, light, model, device):
     input_tensor = torch.tensor(image).permute(2, 0, 1)
     input_tensor = input_tensor / 255.0
 
-    input_tensor = v2.Normalize(mean=(0.7309, 0.7063, 0.6706, 0.6635, 0.6541, 0.6407,), std=(0.2297, 0.2295, 0.2319, 0.2309, 0.2232, 0.2140,))(input_tensor)
+    #input_tensor = v2.Normalize(mean=(0.7309, 0.7063, 0.6706, 0.6635, 0.6541, 0.6407,), std=(0.2297, 0.2295, 0.2319, 0.2309, 0.2232, 0.2140,))(input_tensor)
     input_tensor = input_tensor.unsqueeze(0)
 
     hlc = torch.tensor(hlc, dtype=torch.long)
@@ -237,6 +237,8 @@ def model_control(image, hlc, speed, light, model, device):
     light = light.to(device)
 
     throttle, steer, brake = inference(model, input_tensor, hlc, speed, light)
+
+    print(f"Throttle: {throttle}, steer: {steer}, brake: {brake}")
 
     return carla.VehicleControl(throttle=throttle, steer=steer, brake=brake)
 

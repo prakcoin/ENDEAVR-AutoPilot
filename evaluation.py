@@ -6,7 +6,7 @@ import logging
 import numpy as np
 from utils.sensors import start_camera, start_collision_sensor, start_lane_invasion_sensor
 from utils.shared_utils import (init_world, read_routes, create_route, traffic_light_to_int,
-                                spawn_ego_vehicle, spawn_vehicles, setup_traffic_manager, 
+                                spawn_ego_vehicle, spawn_vehicles, setup_traffic_manager, road_option_to_int, traffic_light_to_int,
                                 cleanup, update_spectator, to_rgb, calculate_delta_yaw, CropCustom,
                                 model_control, load_model)
 from utils.dist_tracker import DistanceTracker
@@ -85,7 +85,7 @@ def check_collision(prev_collision):
     collision_type = None
     return prev_collision
 
-def run_episode(world, model, device, ego_vehicle, main_rgb_cam, wide_rgb_cam, end_point, route, route_length, max_frames):
+def run_episode(world, model, device, ego_vehicle, rgb_cam, end_point, route, route_length, max_frames):
     global has_collision, collision_type
     has_collision = False
     global num_wrong_turns
@@ -151,8 +151,7 @@ def run_episode(world, model, device, ego_vehicle, main_rgb_cam, wide_rgb_cam, e
         prev_hlc = hlc
 
         update_spectator(spectator, ego_vehicle)
-        main_sensor_data = np.array(to_rgb(main_rgb_cam.get_sensor_data()))
-        wide_sensor_data = np.array(to_rgb(wide_rgb_cam.get_sensor_data()))
+        sensor_data = np.array(to_rgb(rgb_cam.get_sensor_data()))
 
         light_status = -1
         if ego_vehicle.is_at_traffic_light():
@@ -168,7 +167,7 @@ def run_episode(world, model, device, ego_vehicle, main_rgb_cam, wide_rgb_cam, e
                 running_light = False
         light = np.array([traffic_light_to_int(light_status)])
 
-        control = model_control(main_sensor_data, wide_sensor_data, hlc, speed_km_h, light, model, device)
+        control = model_control(sensor_data, hlc, speed_km_h, light, model, device)
         ego_vehicle.apply_control(control)
         dist_tracker.update(ego_vehicle)
         world.tick()
@@ -215,12 +214,12 @@ def main(args):
         if (args.vehicles > 0):
             vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
 
-        main_rgb_cam, wide_rgb_cam = start_camera(world, ego_vehicle)
+        rgb_cam = start_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
-        sensors = [main_rgb_cam.get_sensor(), wide_rgb_cam.get_sensor(), collision_sensor]
+        sensors = [rgb_cam.get_sensor(), collision_sensor]
 
-        episode_completed, route_completion = run_episode(world, model, device, ego_vehicle, main_rgb_cam, wide_rgb_cam, end_point, route, route_length, args.max_frames)
+        episode_completed, route_completion = run_episode(world, model, device, ego_vehicle, rgb_cam, end_point, route, route_length, args.max_frames)
         if episode_completed:
             completed_episodes += 1
 
@@ -245,11 +244,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Model Evaluation Script')
     parser.add_argument('--town', type=str, default='Town02', help='CARLA town to use')
     parser.add_argument('--weather', type=str, default='ClearNoon', help='Weather condition to set')
-    parser.add_argument('--max_frames', type=int, default=5000, help='Number of frames before terminating episode')
+    parser.add_argument('--max_frames', type=int, default=8000, help='Number of frames before terminating episode')
     parser.add_argument('--episodes', type=int, default=12, help='Number of episodes to evaluate for')
-    parser.add_argument('--vehicles', type=int, default=50, help='Number of vehicles present')
+    parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')
     parser.add_argument('--route_file', type=str, default='routes/Town02_All.txt', help='Filepath for route file')
-    parser.add_argument('--model', type=str, default='av_model.pt', help='Name of saved model')
+    parser.add_argument('--model', type=str, default='transformer_av_model.pt', help='Name of saved model')
     args = parser.parse_args()
     
     logging.basicConfig(filename='evaluation.log', 
