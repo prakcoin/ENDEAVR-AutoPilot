@@ -56,36 +56,23 @@ def end_episode(ego_vehicle, end_point, frame, idle_frames, args):
         done = True
     return done
 
-def update_data_file(episode_data, episode_count, vehicle_list, args):
-    vehicle_str = "novehicles"
-    if vehicle_list:
-        vehicle_str = "vehicles"
-
-    agent_str = "default"
-    if args.noisy_agent:
-        agent_str = "noisy"
-
-    route_str = ""
-    if args.collect_steer:
-        route_str = "steering_"
-
+def update_data_file(episode_data, episode_count):
     if not os.path.isdir(f'data'):
         os.makedirs(f'data')
 
-    with h5py.File(f'data/{args.town}_{args.weather}_{vehicle_str}_{agent_str}_{route_str}episode_{episode_count + 1}.h5', 'w') as file:
+    with h5py.File(f'data/episode_{episode_count + 1}.h5', 'w') as file:
         for key, data_array in episode_data.items():
             data_array = np.array(data_array)
             file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
 
-def run_episode(world, episode_count, ego_vehicle, agent, vehicle_list, main_rgb_cam, wide_rgb_cam, end_point, args):
+def run_episode(world, episode_count, ego_vehicle, agent, vehicle_list, rgb_cam, end_point, args):
     global has_collision
     has_collision = False
     global has_lane_invasion
     has_lane_invasion = False
 
     episode_data = {
-        'main_rgb': [],
-        'wide_rgb': [],
+        'rgb': [],
         'controls': [],
         'speed': [],
         'hlc': [],
@@ -108,8 +95,7 @@ def run_episode(world, episode_count, ego_vehicle, agent, vehicle_list, main_rgb
         if noisy_control:
             ego_vehicle.apply_control(noisy_control)
 
-        main_sensor_data = to_rgb(main_rgb_cam.get_sensor_data())
-        wide_sensor_data = to_rgb(wide_rgb_cam.get_sensor_data())
+        sensor_data = to_rgb(rgb_cam.get_sensor_data())
 
         velocity = ego_vehicle.get_velocity()
         speed_km_h = (3.6 * np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2))
@@ -121,8 +107,7 @@ def run_episode(world, episode_count, ego_vehicle, agent, vehicle_list, main_rgb
 
         if not agent.noise:
             frame_data = {
-                'main_rgb': np.array(main_sensor_data),
-                'wide_rgb': np.array(wide_sensor_data),
+                'rgb': np.array(sensor_data),
                 'controls': np.array([control.steer, control.throttle, control.brake]),
                 'speed': np.array([speed_km_h]),
                 'hlc': np.array([road_option_to_int(agent.get_next_action())]),
@@ -140,7 +125,7 @@ def run_episode(world, episode_count, ego_vehicle, agent, vehicle_list, main_rgb
         frame += 1
 
     if not has_collision and not has_lane_invasion and frame <= args.max_frames and idle_frames < (args.max_frames / 2):
-        update_data_file(episode_data, episode_count, vehicle_list, args)
+        update_data_file(episode_data, episode_count)
 
 def main(args):
     world, client = init_world(args.town)
@@ -176,17 +161,17 @@ def main(args):
         if (args.vehicles > 0):
             vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
 
-        main_rgb_cam, wide_rgb_cam = start_camera(world, ego_vehicle)
+        rgb_cam = start_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
-        sensors = [main_rgb_cam.get_sensor(), wide_rgb_cam.get_sensor(), collision_sensor]
+        sensors = [rgb_cam.get_sensor(), collision_sensor]
         if args.lane_invasion:
             lane_invasion_sensor = start_lane_invasion_sensor(world, ego_vehicle)
             lane_invasion_sensor.listen(lane_invasion_callback)
             sensors.append(lane_invasion_sensor)
         setup_vehicle_for_tm(traffic_manager, ego_vehicle)
 
-        run_episode(world, episode, ego_vehicle, agent, vehicle_list, main_rgb_cam, wide_rgb_cam, end_point, args)
+        run_episode(world, episode, ego_vehicle, agent, vehicle_list, rgb_cam, end_point, args)
         if (has_collision or has_lane_invasion):
         #     num_tries += 1
             episode -= 1

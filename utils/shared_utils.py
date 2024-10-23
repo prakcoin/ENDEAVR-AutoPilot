@@ -32,8 +32,8 @@ def setup_traffic_manager(client):
 
 def setup_vehicle_for_tm(traffic_manager, ego_vehicle):
     ego_vehicle.set_autopilot(True)
-    traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
-    traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
+    # traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
+    # traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
     traffic_manager.set_desired_speed(ego_vehicle, 40)
 
 def set_red_light_time(world):
@@ -212,14 +212,10 @@ def load_model(model_path, device):
     model.eval()
     return model
 
-def model_control(main_image, wide_image, hlc, speed, light, model, device):
-    main_tensor = torch.tensor(main_image).permute(2, 0, 1)
-    main_tensor = main_tensor / 255.0
+def model_control(image, hlc, speed, light, model, device):
+    input_tensor = torch.tensor(image).permute(2, 0, 1)
+    input_tensor = input_tensor / 255.0
 
-    wide_tensor = torch.tensor(wide_image).permute(2, 0, 1)
-    wide_tensor = wide_tensor / 255.0
-
-    input_tensor = torch.cat((main_tensor, wide_tensor), dim=0)
     input_tensor = v2.Normalize(mean=(0.7309, 0.7063, 0.6706, 0.6635, 0.6541, 0.6407,), std=(0.2297, 0.2295, 0.2319, 0.2309, 0.2232, 0.2140,))(input_tensor)
     input_tensor = input_tensor.unsqueeze(0)
 
@@ -240,7 +236,7 @@ def model_control(main_image, wide_image, hlc, speed, light, model, device):
     speed = speed.to(device)
     light = light.to(device)
 
-    throttle, steer, brake = mc_dropout_inference(model, input_tensor, main_image, wide_image, hlc, speed, light)
+    throttle, steer, brake = inference(model, input_tensor, hlc, speed, light)
 
     return carla.VehicleControl(throttle=throttle, steer=steer, brake=brake)
 

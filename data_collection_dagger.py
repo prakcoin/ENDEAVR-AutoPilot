@@ -49,28 +49,23 @@ def end_episode(ego_vehicle, end_point, frame, args):
         done = True
     return done
 
-def update_data_file(episode_data, episode_count, vehicle_list, args):
-    vehicle_str = "novehicles"
-    if vehicle_list:
-        vehicle_str = "vehicles"
-
+def update_data_file(episode_data, episode_count):
     if not os.path.isdir(f'data'):
         os.makedirs(f'data')
 
-    with h5py.File(f'data/{args.town}_{args.weather}_{vehicle_str}_dagger_episode_{episode_count + 1}.h5', 'w') as file:
+    with h5py.File(f'data/dagger_episode_{episode_count + 1}.h5', 'w') as file:
         for key, data_array in episode_data.items():
             data_array = np.array(data_array)
             file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
 
-def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_list, main_rgb_cam, wide_rgb_cam, end_point, device, args):
+def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_list, rgb_cam, end_point, device, args):
     global has_collision
     has_collision = False
     global has_lane_invasion
     has_lane_invasion = False
 
     episode_data = {
-        'main_rgb': [],
-        'wide_rgb': [],
+        'rgb': [],
         'controls': [],
         'speed': [],
         'hlc': [],
@@ -97,8 +92,7 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
 
         update_spectator(spectator, ego_vehicle)
     
-        main_sensor_data = np.array(to_rgb(main_rgb_cam.get_sensor_data()))
-        wide_sensor_data = np.array(to_rgb(wide_rgb_cam.get_sensor_data()))
+        sensor_data = np.array(to_rgb(rgb_cam.get_sensor_data()))
 
         velocity = ego_vehicle.get_velocity()
         speed_km_h = (3.6 * np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2))
@@ -127,16 +121,13 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
         else:
             hlc = 0
         
-        # detect whether the vehicle made the correct turn
         if prev_hlc != 0 and hlc == 0:
             print(f'turned {delta_yaw} degrees')
-            # if command is Left or Right but didn't make turn
             if 75 < np.abs(delta_yaw) < 180:
                 if delta_yaw < 0 and prev_hlc != 1:
                     turning_infraction = True
                 elif delta_yaw > 0 and prev_hlc != 2:
                     turning_infraction = True
-            # if command is Go Straight but turned
             elif prev_hlc != 3:
                 turning_infraction = True
             if turning_infraction:
@@ -154,7 +145,7 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
         if autopilot:
             control, _ = agent.run_step()
         else:
-            control = model_control(main_sensor_data, wide_sensor_data, hlc, speed_km_h, light, model, device)
+            control = model_control(sensor_data, hlc, speed_km_h, light, model, device)
         ego_vehicle.apply_control(control)
 
         # switch between autopilot and model
@@ -165,8 +156,7 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
 
         if idle_frames < 50 and autopilot:
             frame_data = {
-                'main_rgb': np.array(main_sensor_data),
-                'wide_rgb': np.array(wide_sensor_data),
+                'rgb': np.array(sensor_data),
                 'controls': np.array([control.steer, control.throttle, control.brake]),
                 'speed': np.array([speed_km_h]),
                 'hlc': np.array([hlc]),
@@ -178,7 +168,7 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
         world.tick()
         frame += 1
 
-    update_data_file(episode_data, episode_count, vehicle_list, args)
+    update_data_file(episode_data, episode_count)
 
 def main(args):
     world, client = init_world(args.town)
@@ -216,29 +206,29 @@ def main(args):
         if (args.vehicles > 0):
             vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
 
-        main_rgb_cam, wide_rgb_cam = start_camera(world, ego_vehicle)
+        rgb_cam = start_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
-        sensors = [main_rgb_cam.get_sensor(), wide_rgb_cam.get_sensor(), collision_sensor]
+        sensors = [rgb_cam.get_sensor(), collision_sensor]
         if args.lane_invasion:
             lane_invasion_sensor = start_lane_invasion_sensor(world, ego_vehicle)
             lane_invasion_sensor.listen(lane_invasion_callback)
             sensors.append(lane_invasion_sensor)
         setup_vehicle_for_tm(traffic_manager, ego_vehicle)
 
-        run_episode(world, episode, ego_vehicle, model, agent, route, vehicle_list, main_rgb_cam, wide_rgb_cam, end_point, device, args)
+        run_episode(world, episode, ego_vehicle, model, agent, route, vehicle_list, rgb_cam, end_point, device, args)
         cleanup(client, ego_vehicle, vehicle_list, sensors)
         episode += 1
     print("Simulation complete")
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
+    parser = argparse.ArgumentParser(description='CARLA Data Collection (DAgger) Script')
     parser.add_argument('--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('--weather', type=str, default='ClearNoon', help='CARLA weather conditions to use')
     parser.add_argument('--max_frames', type=int, default=2000, help='Number of frames to collect per episode')
     parser.add_argument('--model', type=str, default='av_model.pt', help='Name of saved model')
     parser.add_argument('--episodes', type=int, default=8, help='Number of episodes to collect data for')
-    parser.add_argument('--vehicles', type=int, default=50, help='Number of vehicles present')
+    parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
     parser.add_argument('--lane_invasion', action="store_true", help='Activate lane invasion sensor')
     args = parser.parse_args()
