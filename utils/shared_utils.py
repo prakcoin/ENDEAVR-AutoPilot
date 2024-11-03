@@ -32,8 +32,8 @@ def setup_traffic_manager(client):
 
 def setup_vehicle_for_tm(traffic_manager, ego_vehicle):
     ego_vehicle.set_autopilot(True)
-    # traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
-    # traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
+    traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
+    traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
     traffic_manager.set_desired_speed(ego_vehicle, 40)
 
 def set_red_light_time(world):
@@ -177,6 +177,15 @@ def to_rgb(image):
     image_array = image_array.copy()
     return image_array
 
+def to_depth(image):
+    image.convert(carla.ColorConverter.LogarithmicDepth)
+    image_array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+    image_array = np.reshape(image_array, (image.height, image.width, 4))
+    image_array = image_array[:, :, :3]
+    image_array = image_array[:, :, ::-1]
+    image_array = image_array.copy()
+    return image_array
+
 def read_routes(filename):
     with open(filename, 'r') as f:
         lines = f.readlines()
@@ -212,6 +221,7 @@ def load_model(model_path, device):
     model.eval()
     return model
 
+#FIX THIS 
 def model_control(image, hlc, speed, light, model, device):
     input_tensor = torch.tensor(image).permute(2, 0, 1)
     input_tensor = input_tensor / 255.0
