@@ -4,7 +4,7 @@ import numpy as np
 import open3d as o3d
 
 class RGBCamera:
-    def __init__(self, world, vehicle, size_x='288', size_y='200', fov='90', y_offset=0.0):
+    def __init__(self, world, vehicle, size_x='320', size_y='240', fov='90', y_offset=0.0):
         cam_bp = world.get_blueprint_library().find('sensor.camera.rgb')
         cam_transform = carla.Transform(
             carla.Location(x=1.5, y=y_offset, z=2.4),
@@ -29,7 +29,7 @@ class RGBCamera:
         return self._sensor
 
 class DepthCamera:
-    def __init__(self, world, vehicle, size_x='288', size_y='200', fov='90', y_offset=0.0):
+    def __init__(self, world, vehicle, size_x='320', size_y='240', fov='90', y_offset=0.0):
         cam_bp = world.get_blueprint_library().find('sensor.camera.depth')
         cam_transform = carla.Transform(
             carla.Location(x=1.5, y=y_offset, z=2.4),
@@ -55,19 +55,17 @@ class DepthCamera:
 
 def start_camera(world, vehicle):
     baseline = 0.4
-    rgb_cam_main = RGBCamera(world, vehicle, size_x='288', size_y='200', fov='90', y_offset=0)
-    rgb_cam_left = RGBCamera(world, vehicle, size_x='288', size_y='200', fov='90', y_offset=-baseline / 2)
-    rgb_cam_right = RGBCamera(world, vehicle, size_x='288', size_y='200', fov='90', y_offset=baseline / 2)
-    depth_cam = DepthCamera(world, vehicle, size_x='288', size_y='200', fov='90', y_offset=0)
-    return rgb_cam_main, rgb_cam_left, rgb_cam_right, depth_cam
+    rgb_cam_main = RGBCamera(world, vehicle, size_x='320', size_y='240', fov='90', y_offset=0)
+    rgb_cam_left = RGBCamera(world, vehicle, size_x='320', size_y='240', fov='90', y_offset=-baseline / 2)
+    rgb_cam_right = RGBCamera(world, vehicle, size_x='320', size_y='240', fov='90', y_offset=baseline / 2)
+    return rgb_cam_main, rgb_cam_left, rgb_cam_right
 
 def k_matrix():
-    image_w = 288
-    image_h = 200
+    image_w = 320
+    image_h = 240
     fov = 90.0
     focal = image_w / (2.0 * np.tan(fov * np.pi / 360.0))
 
-    # In this case Fx and Fy are the same since the pixel aspect ratio is 1
     K = np.identity(3)
     K[0, 0] = K[1, 1] = focal
     K[0, 2] = image_w / 2.0
@@ -75,7 +73,8 @@ def k_matrix():
     return K
 
 def compute_left_disparity(img_left, img_right):
-    block_size = 1
+    block_size = 11
+    win_size = 1
     min_disparity = 0
     n_disp_factor = 2
     num_disparities = 16 * n_disp_factor - min_disparity
@@ -87,20 +86,21 @@ def compute_left_disparity(img_left, img_right):
         minDisparity=min_disparity,
         numDisparities=num_disparities,
         blockSize=block_size,
-        P1=8 * 3 * block_size**2,
-        P2=32 * 3 * block_size**2,
-        # uniquenessRatio=5,
-        # speckleWindowSize=50,
-        # speckleRange=2,
-        # disp12MaxDiff=2,
+        P1=8 * 3 * win_size**2,
+        P2=32 * 3 * win_size**2,
+        uniquenessRatio=5,
+        speckleWindowSize=50,
+        speckleRange=2,
+        disp12MaxDiff=2,
         mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY
     )
 
     disp_left = left_matcher_SGBM.compute(img_left_gray, img_right_gray).astype(np.float32) / 16
-    return disp_left
+    return disp_left, left_matcher_SGBM
 
 def compute_right_disparity(img_left, img_right):
-    block_size = 1
+    block_size = 11
+    win_size = 1
     min_disparity = 0
     n_disp_factor = 2
     num_disparities = 16 * n_disp_factor - min_disparity
@@ -112,38 +112,38 @@ def compute_right_disparity(img_left, img_right):
         minDisparity=min_disparity,
         numDisparities=num_disparities,
         blockSize=block_size,
-        P1=8 * 3 * block_size**2,
-        P2=32 * 3 * block_size**2,
-        # uniquenessRatio=5,
-        # speckleWindowSize=50,
-        # speckleRange=2,
-        # disp12MaxDiff=2,
+        P1=8 * 3 * win_size**2,
+        P2=32 * 3 * win_size**2,
+        uniquenessRatio=5,
+        speckleWindowSize=50,
+        speckleRange=2,
+        disp12MaxDiff=2,
         mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY
     )
 
     disp_right = right_matcher_SGBM.compute(img_right_gray, img_left_gray).astype(np.float32) / 16
     return disp_right
 
-def apply_wls_filter(disp_left, disp_right, img_left):
+def apply_wls_filter(disp_left, disp_right, left_matcher, img_left):
     lmbda = 8000
-    sigma = 2.0
+    sigma = 1.5
 
-    wls_filter = cv2.ximgproc.createDisparityWLSFilterGeneric(False) 
+    wls_filter = cv2.ximgproc.createDisparityWLSFilter(left_matcher)
     wls_filter.setLambda(lmbda)
     wls_filter.setSigmaColor(sigma)
 
     filtered_disp = wls_filter.filter(disp_left, img_left, disparity_map_right=disp_right)
     return filtered_disp
 
-def calculate_depth(lf, rf, main, gt_depth):
-    disp_left = compute_left_disparity(lf, rf)
+def calculate_depth(lf, rf):
+    disp_left, left_matcher = compute_left_disparity(lf, rf)
     disp_right = compute_right_disparity(lf, rf)
     
-    disp_left[disp_left <= 0] = 0.1
-    disp_right[disp_right <= 0] = 0.1
+    disp_left[disp_left <= 0.1] = 0.1
+    disp_right[disp_right <= 0.1] = 0.1
 
-    disp_left_filtered = apply_wls_filter(disp_left, disp_right, lf)
-
+    disp_left_filtered = apply_wls_filter(disp_left, disp_right, left_matcher, lf)
+    
     f = k_matrix()[0, 0]
     b = 0.4
 
@@ -153,16 +153,16 @@ def calculate_depth(lf, rf, main, gt_depth):
     max_depth = 50.0
     depth_map = np.clip(depth_map, 0, max_depth)
 
-    depth_map = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    # depth_map = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
-    main = cv2.cvtColor(main, cv2.COLOR_GRAY2BGR) if len(main.shape) == 2 else main
-    gt_depth = cv2.cvtColor(gt_depth, cv2.COLOR_GRAY2BGR) if len(gt_depth.shape) == 2 else gt_depth
-    depth_map = cv2.cvtColor(depth_map, cv2.COLOR_GRAY2BGR)
+    # main = cv2.cvtColor(main, cv2.COLOR_GRAY2BGR) if len(main.shape) == 2 else main
+    # gt_depth = cv2.cvtColor(gt_depth, cv2.COLOR_GRAY2BGR) if len(gt_depth.shape) == 2 else gt_depth
+    # depth_map = cv2.cvtColor(depth_map, cv2.COLOR_GRAY2BGR)
 
-    grid_image = np.hstack([main, depth_map, gt_depth])
+    # grid_image = np.hstack([main, depth_map, gt_depth])
 
-    cv2.imshow("Comparison Grid (Main | Computed Depth | GT Depth)", grid_image)
-    cv2.waitKey(1)
+    # cv2.imshow("Comparison Grid (Main | Computed Depth | GT Depth)", grid_image)
+    # cv2.waitKey(1)
 
     return depth_map
 
