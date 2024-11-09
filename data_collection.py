@@ -2,17 +2,14 @@ import argparse
 import os
 import logging
 import numpy as np
-import cv2
 import h5py
 import carla
-import matplotlib.pyplot as plt
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
                                 spawn_ego_vehicle, spawn_vehicles, create_route, to_rgb, to_depth,
                                 road_option_to_int, cleanup, update_spectator, read_routes, 
-                                set_traffic_lights_green, get_traffic_light_status, traffic_light_to_int, 
-                                CropCustom)
-from utils.sensors import start_camera, start_collision_sensor, start_lane_invasion_sensor, calculate_depth
-from utils.agents import NoisyTrafficManagerAgent, DefaultTrafficManagerAgent
+                                set_traffic_lights_green, get_traffic_light_status, traffic_light_to_int)
+from utils.sensors import start_camera, start_collision_sensor, calculate_depth
+from utils.agents import NoisyTrafficManagerAgent
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
 # Linux: ./CarlaUE4.sh -carla-server-timeout=10000ms -RenderOffScreen
@@ -22,11 +19,6 @@ has_collision = False
 def collision_callback(data):
     global has_collision
     has_collision = True
-
-has_lane_invasion = False
-def lane_invasion_callback(data):
-    global has_lane_invasion
-    has_lane_invasion = True
 
 def end_reached(ego_vehicle, end_point):
     vehicle_location = ego_vehicle.get_location()
@@ -52,25 +44,20 @@ def end_episode(ego_vehicle, end_point, frame, idle_frames, args):
     elif has_collision:
         print("Collision detected, episode ending")
         done = True
-    elif has_lane_invasion:
-        print("Lane invasion detected, episode ending")
-        done = True
     return done
 
 def update_data_file(episode_data, episode_count):
     if not os.path.isdir(f'data'):
         os.makedirs(f'data')
 
-    with h5py.File(f'data/episode_{episode_count + 1}.h5', 'w') as file:
+    with h5py.File(f'data/episode_{episode_count + 1 + 20}.h5', 'w') as file:
         for key, data_array in episode_data.items():
             data_array = np.array(data_array)
             file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
 
-def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam_main, rgb_cam_left, rgb_cam_right, end_point, args):
+def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam, depth_cam, end_point, args):
     global has_collision
     has_collision = False
-    global has_lane_invasion
-    has_lane_invasion = False
 
     episode_data = {
         'rgb': [],
@@ -97,10 +84,11 @@ def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam_main, rgb_cam_
         if noisy_control:
             ego_vehicle.apply_control(noisy_control)
 
-        sensor_data_main = to_rgb(rgb_cam_main.get_sensor_data())
-        sensor_data_left = to_rgb(rgb_cam_left.get_sensor_data())
-        sensor_data_right = to_rgb(rgb_cam_right.get_sensor_data())
-        depth_map = calculate_depth(sensor_data_left, sensor_data_right)
+        rgb_data = to_rgb(rgb_cam.get_sensor_data())
+        depth_map = to_depth(depth_cam.get_sensor_data())
+        #sensor_data_left = to_rgb(rgb_cam_left.get_sensor_data())
+        #sensor_data_right = to_rgb(rgb_cam_right.get_sensor_data())
+        #depth_map = calculate_depth(sensor_data_left, sensor_data_right)
 
         velocity = ego_vehicle.get_velocity()
         speed_km_h = (3.6 * np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2))
@@ -112,7 +100,7 @@ def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam_main, rgb_cam_
 
         if not agent.noise:
             frame_data = {
-                'rgb': np.array(sensor_data_main),
+                'rgb': np.array(rgb_data),
                 'depth': np.array(depth_map),
                 'controls': np.array([control.steer, control.throttle, control.brake]),
                 'speed': np.array([speed_km_h]),
@@ -130,7 +118,7 @@ def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam_main, rgb_cam_
         world.tick()
         frame += 1
 
-    if not has_collision and not has_lane_invasion and frame <= args.max_frames and idle_frames < (args.max_frames / 2):
+    if not has_collision and frame <= args.max_frames and idle_frames < (args.max_frames / 2):
         update_data_file(episode_data, episode_count)
 
 def main(args):
@@ -158,27 +146,20 @@ def main(args):
         print(f"Route from spawn point #{spawn_point_index} to #{end_point_index}")
 
         ego_vehicle = spawn_ego_vehicle(world, spawn_point)
-        if args.noisy_agent:
-            agent = NoisyTrafficManagerAgent(ego_vehicle, traffic_manager)
-        else:
-            agent = DefaultTrafficManagerAgent(ego_vehicle, traffic_manager)
+        agent = NoisyTrafficManagerAgent(ego_vehicle, traffic_manager)
         agent.set_route(route, end_point)
 
         if (args.vehicles > 0):
             vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
 
-        rgb_cam_main, rgb_cam_left, rgb_cam_right = start_camera(world, ego_vehicle)
+        rgb_cam, depth_cam = start_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
-        sensors = [rgb_cam_main.get_sensor(), rgb_cam_left.get_sensor(), rgb_cam_right.get_sensor(), collision_sensor]
-        if args.lane_invasion:
-            lane_invasion_sensor = start_lane_invasion_sensor(world, ego_vehicle)
-            lane_invasion_sensor.listen(lane_invasion_callback)
-            sensors.append(lane_invasion_sensor)
+        sensors = [rgb_cam.get_sensor(), depth_cam.get_sensor(), collision_sensor]
         setup_vehicle_for_tm(traffic_manager, ego_vehicle)
 
-        run_episode(world, episode, ego_vehicle, agent, rgb_cam_main, rgb_cam_left, rgb_cam_right, end_point, args)
-        if (has_collision or has_lane_invasion):
+        run_episode(world, episode, ego_vehicle, agent, rgb_cam, depth_cam, end_point, args)
+        if (has_collision):
             num_tries += 1
             episode -= 1
             restart = True
@@ -197,8 +178,6 @@ if __name__ == '__main__':
     parser.add_argument('--episodes', type=int, default=16, help='Number of episodes to collect data for')
     parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
-    parser.add_argument('--noisy_agent', action="store_true", help='Use noisy agent over default agent')
-    parser.add_argument('--lane_invasion', action="store_true", help='Activate lane invasion sensor')
     parser.add_argument('--collect_steer', action="store_true", help='Only collect steering data')
     args = parser.parse_args()
 
