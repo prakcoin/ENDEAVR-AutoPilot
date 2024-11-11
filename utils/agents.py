@@ -2,7 +2,7 @@ import random
 import numpy as np
 import carla
 
-class DefaultTrafficManagerAgent:
+class DefaultImitationLearningAgent:
     def __init__(self, vehicle, traffic_manager):
         self.vehicle = vehicle
         self.traffic_manager = traffic_manager
@@ -27,7 +27,7 @@ class DefaultTrafficManagerAgent:
     def get_next_action(self):
         return self.traffic_manager.get_next_action(self.vehicle)[0]
 
-class NoisyTrafficManagerAgent:
+class NoisyImitationLearningAgent:
     """
     This agent adds noise to the output controls of the CARLA Traffic Manager for data collection.
     """
@@ -92,6 +92,48 @@ class NoisyTrafficManagerAgent:
 
         return control_copy
     
+
+    def set_path(self, path):
+        self.path = path
+        self.traffic_manager.set_path(self.vehicle, path)
+
+    def set_route(self, route, destination):
+        self.route = route
+        self.traffic_manager.set_route(self.vehicle, route)
+        self.destination = destination
+
+    def get_next_action(self):
+        return self.traffic_manager.get_next_action(self.vehicle)[0]
+
+class LLMAgent:
+    """
+    This agent generates control signals with specific injected errors for LLM data collection.
+    """
+    def __init__(self, vehicle, traffic_manager):
+        self.vehicle = vehicle
+        self.traffic_manager = traffic_manager
+        self.error_probability = 0.5
+
+    def run_step(self):
+        """
+        Executes a navigation step with the possibility of injecting errors.
+        :return: correct_control, incorrect_control
+        """
+        correct_control = self.vehicle.get_control()
+        incorrect_control = carla.VehicleControl(
+            throttle=correct_control.throttle,
+            steer=correct_control.steer,
+            brake=correct_control.brake
+        )
+        
+        if random.random() < self.error_probability:
+            steer_offset = random.choice([random.uniform(-0.5, -0.1), random.uniform(0.1, 0.5)])
+            incorrect_control.steer += steer_offset
+            incorrect_control.steer = np.clip(incorrect_control.steer, -1.0, 1.0)
+        else:
+            incorrect_control.throttle, incorrect_control.brake = incorrect_control.brake, incorrect_control.throttle
+
+        return correct_control, incorrect_control
 
     def set_path(self, path):
         self.path = path

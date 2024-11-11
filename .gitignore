@@ -1,6 +1,8 @@
 __pycache__/
 venv/
 data/
+images/
+*.jsonl
 *.h5
 *.log
 *.zip
