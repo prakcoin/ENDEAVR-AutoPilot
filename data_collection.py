@@ -1,15 +1,14 @@
 import argparse
 import os
-import logging
 import numpy as np
 import h5py
 import carla
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
                                 spawn_ego_vehicle, spawn_vehicles, create_route, to_rgb, to_depth,
                                 road_option_to_int, cleanup, update_spectator, read_routes, 
-                                set_traffic_lights_green, get_traffic_light_status, traffic_light_to_int)
-from utils.sensors import start_camera, start_collision_sensor, calculate_depth
-from utils.agents import NoisyTrafficManagerAgent
+                                get_traffic_light_status, traffic_light_to_int)
+from utils.sensors import start_camera, start_collision_sensor
+from utils.agents import NoisyImitationLearningAgent
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
 # Linux: ./CarlaUE4.sh -carla-server-timeout=10000ms -RenderOffScreen
@@ -50,7 +49,7 @@ def update_data_file(episode_data, episode_count):
     if not os.path.isdir(f'data'):
         os.makedirs(f'data')
 
-    with h5py.File(f'data/episode_{episode_count + 1 + 20}.h5', 'w') as file:
+    with h5py.File(f'data/episode_{episode_count + 1}.h5', 'w') as file:
         for key, data_array in episode_data.items():
             data_array = np.array(data_array)
             file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
@@ -86,9 +85,6 @@ def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam, depth_cam, en
 
         rgb_data = to_rgb(rgb_cam.get_sensor_data())
         depth_map = to_depth(depth_cam.get_sensor_data())
-        #sensor_data_left = to_rgb(rgb_cam_left.get_sensor_data())
-        #sensor_data_right = to_rgb(rgb_cam_right.get_sensor_data())
-        #depth_map = calculate_depth(sensor_data_left, sensor_data_right)
 
         velocity = ego_vehicle.get_velocity()
         speed_km_h = (3.6 * np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2))
@@ -146,7 +142,7 @@ def main(args):
         print(f"Route from spawn point #{spawn_point_index} to #{end_point_index}")
 
         ego_vehicle = spawn_ego_vehicle(world, spawn_point)
-        agent = NoisyTrafficManagerAgent(ego_vehicle, traffic_manager)
+        agent = NoisyImitationLearningAgent(ego_vehicle, traffic_manager)
         agent.set_route(route, end_point)
 
         if (args.vehicles > 0):
