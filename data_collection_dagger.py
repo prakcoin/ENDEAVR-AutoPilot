@@ -1,19 +1,16 @@
 import argparse
 import os
-import logging
 import random
 import torch
 import numpy as np
 import h5py
 import carla
-import matplotlib.pyplot as plt
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
                                 spawn_ego_vehicle, spawn_vehicles, create_route, to_rgb, 
                                 road_option_to_int, cleanup, update_spectator, read_routes, 
-                                set_traffic_lights_green, get_traffic_light_status, traffic_light_to_int,
-                                load_model, model_control, calculate_delta_yaw, CropCustom)
-from utils.sensors import start_camera, start_collision_sensor, start_lane_invasion_sensor
-from utils.agents import DefaultTrafficManagerAgent
+                                traffic_light_to_int, load_model, model_control, calculate_delta_yaw)
+from utils.sensors import start_camera, start_collision_sensor
+from utils.agents import DefaultImitationLearningAgent
 
 # Windows: CarlaUE4.exe -carla-server-timeout=10000ms
 # Linux: ./CarlaUE4.sh -carla-server-timeout=10000ms -RenderOffScreen
@@ -23,11 +20,6 @@ has_collision = False
 def collision_callback(data):
     global has_collision
     has_collision = True
-
-has_lane_invasion = False
-def lane_invasion_callback(data):
-    global has_lane_invasion
-    has_lane_invasion = True
 
 def end_reached(ego_vehicle, end_point):
     vehicle_location = ego_vehicle.get_location()
@@ -58,14 +50,13 @@ def update_data_file(episode_data, episode_count):
             data_array = np.array(data_array)
             file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
 
-def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_list, rgb_cam, end_point, device, args):
+def run_episode(world, episode_count, ego_vehicle, model, agent, route, rgb_cam, depth_cam, end_point, device, args):
     global has_collision
     has_collision = False
-    global has_lane_invasion
-    has_lane_invasion = False
 
     episode_data = {
         'rgb': [],
+        'depth': [],
         'controls': [],
         'speed': [],
         'hlc': [],
@@ -91,8 +82,9 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
             break
 
         update_spectator(spectator, ego_vehicle)
-    
-        sensor_data = np.array(to_rgb(rgb_cam.get_sensor_data()))
+
+        rgb_data = np.array(to_rgb(rgb_cam.get_sensor_data()))
+        depth_map = np.array(to_rgb(depth_cam.get_sensor_data()))
 
         velocity = ego_vehicle.get_velocity()
         speed_km_h = (3.6 * np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2))
@@ -145,10 +137,9 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
         if autopilot:
             control, _ = agent.run_step()
         else:
-            control = model_control(sensor_data, hlc, speed_km_h, light, model, device)
+            control = model_control(rgb_data, depth_map, hlc, speed_km_h, light, model, device)
         ego_vehicle.apply_control(control)
 
-        # switch between autopilot and model
         cur_driver_count += 1
         if cur_driver_count >= 20:
             autopilot = not autopilot
@@ -156,7 +147,8 @@ def run_episode(world, episode_count, ego_vehicle, model, agent, route, vehicle_
 
         if idle_frames < 50 and autopilot:
             frame_data = {
-                'rgb': np.array(sensor_data),
+                'rgb': np.array(rgb_data),
+                'depth': np.array(depth_map),
                 'controls': np.array([control.steer, control.throttle, control.brake]),
                 'speed': np.array([speed_km_h]),
                 'hlc': np.array([hlc]),
@@ -200,23 +192,19 @@ def main(args):
         print(f"Route from spawn point #{spawn_point_index} to #{end_point_index}")
 
         ego_vehicle = spawn_ego_vehicle(world, spawn_point)
-        agent = DefaultTrafficManagerAgent(ego_vehicle, traffic_manager)
+        agent = DefaultImitationLearningAgent(ego_vehicle, traffic_manager)
         agent.set_route(route, end_point)
 
         if (args.vehicles > 0):
             vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
 
-        rgb_cam = start_camera(world, ego_vehicle)
+        rgb_cam, depth_cam = start_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
-        sensors = [rgb_cam.get_sensor(), collision_sensor]
-        if args.lane_invasion:
-            lane_invasion_sensor = start_lane_invasion_sensor(world, ego_vehicle)
-            lane_invasion_sensor.listen(lane_invasion_callback)
-            sensors.append(lane_invasion_sensor)
+        sensors = [rgb_cam.get_sensor(), depth_cam.get_sensor(), collision_sensor]
         setup_vehicle_for_tm(traffic_manager, ego_vehicle)
 
-        run_episode(world, episode, ego_vehicle, model, agent, route, vehicle_list, rgb_cam, end_point, device, args)
+        run_episode(world, episode, ego_vehicle, model, agent, route, rgb_cam, depth_cam, end_point, device, args)
         cleanup(client, ego_vehicle, vehicle_list, sensors)
         episode += 1
     print("Simulation complete")
@@ -230,11 +218,6 @@ if __name__ == '__main__':
     parser.add_argument('--episodes', type=int, default=8, help='Number of episodes to collect data for')
     parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
-    parser.add_argument('--lane_invasion', action="store_true", help='Activate lane invasion sensor')
     args = parser.parse_args()
-
-    # logging.basicConfig(filename='data_collection_log.log', 
-    #                     level=logging.INFO,
-    #                     format='%(asctime)s - %(levelname)s - %(message)s' ) 
 
     main(args)

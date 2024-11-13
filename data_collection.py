@@ -10,10 +10,6 @@ from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle
 from utils.sensors import start_camera, start_collision_sensor
 from utils.agents import NoisyImitationLearningAgent
 
-# Windows: CarlaUE4.exe -carla-server-timeout=10000ms
-# Linux: ./CarlaUE4.sh -carla-server-timeout=10000ms -RenderOffScreen
-# Episode format: (Start point, Endpoint), Length, Route
-
 has_collision = False
 def collision_callback(data):
     global has_collision
@@ -176,9 +172,5 @@ if __name__ == '__main__':
     parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
     parser.add_argument('--collect_steer', action="store_true", help='Only collect steering data')
     args = parser.parse_args()
-
-    # logging.basicConfig(filename='data_collection_log.log', 
-    #                     level=logging.INFO,
-    #                     format='%(asctime)s - %(levelname)s - %(message)s' ) 
 
     main(args)

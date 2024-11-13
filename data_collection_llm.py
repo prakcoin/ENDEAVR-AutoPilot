@@ -243,7 +243,7 @@ def main(args):
     print("Simulation complete")
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
+    parser = argparse.ArgumentParser(description='CARLA Data Collection (LLM) Script')
     parser.add_argument('--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('--weather', type=str, default='ClearNoon', help='CARLA weather conditions to use')
     parser.add_argument('--max_frames', type=int, default=8000, help='Number of frames to collect per episode')
