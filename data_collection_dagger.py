@@ -12,10 +12,6 @@ from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle
 from utils.sensors import start_camera, start_collision_sensor
 from utils.agents import DefaultImitationLearningAgent
 
-# Windows: CarlaUE4.exe -carla-server-timeout=10000ms
-# Linux: ./CarlaUE4.sh -carla-server-timeout=10000ms -RenderOffScreen
-# Episode format: (Start point, Endpoint), Length, Route
-
 has_collision = False
 def collision_callback(data):
     global has_collision

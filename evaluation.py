@@ -12,12 +12,6 @@ from utils.shared_utils import (init_world, read_routes, create_route, traffic_l
 from utils.dist_tracker import DistanceTracker
 from utils.hlc_loader import HighLevelCommandLoader
 
-# Windows: CarlaUE4.exe -carla-server-timeout=10000ms
-# Linux: ./CarlaUE4.sh -carla-server-timeout=10000ms -RenderOffScreen
-
-#Simulation timeout — If no client-server communication can be established in 60 seconds.
-#Off-road driving — If an agent drives off-road, that percentage of the route will not be considered towards the computation of the route completion score.
-
 COLLISION_WALKER_PENALTY = 0.5
 COLLISION_VEHICLE_PENALTY = 0.6
 COLLISION_OTHER_PENALTY = 0.65
@@ -49,7 +43,7 @@ def end_reached(ego_vehicle, end_point):
     distance = vehicle_location.distance(end_location)
     return distance < 1.0
 
-def end_episode(ego_vehicle, end_point, frame, max_frames, idle_frames, turning_infraction):
+def end_episode(ego_vehicle, end_point, frame, max_frames, turning_infraction):
     global num_timeouts
     done = False
     if end_reached(ego_vehicle, end_point):
@@ -59,10 +53,6 @@ def end_episode(ego_vehicle, end_point, frame, max_frames, idle_frames, turning_
         logging.info("Maximum frames reached, episode ending")
         num_timeouts += 1
         done = True
-    # elif idle_frames >= 500:
-    #     logging.info("Vehicle idle for too long, episode ending")
-    #     num_timeouts += 1
-    #     done = True
     elif turning_infraction:
         logging.info("Turning infraction, episode ending")
         done = True
@@ -105,13 +95,12 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, depth_cam, end_point
     prev_yaw = 0
     delta_yaw = 0
     turning_infraction = False
-    idle_frames = 0
     running_light = False
     prev_collision = False
     while True:
         prev_collision = check_collision(prev_collision)
 
-        if end_episode(ego_vehicle, end_point, frame, max_frames, idle_frames, turning_infraction):
+        if end_episode(ego_vehicle, end_point, frame, max_frames, turning_infraction):
             break
         
         transform = ego_vehicle.get_transform()
@@ -120,11 +109,6 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, depth_cam, end_point
         velocity = ego_vehicle.get_velocity()
         speed_m_s = np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2)
         speed_km_h = 3.6 * speed_m_s
-
-        # if speed_km_h < 1.0:
-        #     idle_frames += 1
-        # else:
-        #     idle_frames = 0
 
         speed_km_h = np.array([speed_km_h])
 

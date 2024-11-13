@@ -25,16 +25,13 @@ def end_reached(ego_vehicle, end_point):
     distance = vehicle_location.distance(end_location)
     return distance < 1.0
 
-def end_episode(ego_vehicle, end_point, frame, idle_frames, args):
+def end_episode(ego_vehicle, end_point, frame, args):
     done = False
     if end_reached(ego_vehicle, end_point):
         print("Target reached, episode ending")
         done = True
     elif frame >= args.max_frames:
         print("Maximum frames reached, episode ending")
-        done = True
-    elif idle_frames >= (args.max_frames / 2):
-        print("Vehicle idle for too long, ending episode.")
         done = True
     elif has_collision:
         print("Collision detected, episode ending")
@@ -68,9 +65,8 @@ def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam, depth_cam, en
         world.tick()
 
     frame = 0
-    idle_frames = 0
     while True:
-        if end_episode(ego_vehicle, end_point, frame, idle_frames, args):
+        if end_episode(ego_vehicle, end_point, frame, args):
             break
 
         update_spectator(spectator, ego_vehicle)
@@ -84,11 +80,6 @@ def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam, depth_cam, en
 
         velocity = ego_vehicle.get_velocity()
         speed_km_h = (3.6 * np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2))
-
-        if speed_km_h == 0.0:
-            idle_frames += 1
-        else:
-            idle_frames = 0
 
         if not agent.noise:
             frame_data = {
@@ -110,7 +101,7 @@ def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam, depth_cam, en
         world.tick()
         frame += 1
 
-    if not has_collision and frame <= args.max_frames and idle_frames < (args.max_frames / 2):
+    if not has_collision and frame <= args.max_frames:
         update_data_file(episode_data, episode_count)
 
 def main(args):
