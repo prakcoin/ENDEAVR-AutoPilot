@@ -2,7 +2,7 @@ import carla
 import random
 import numpy as np
 import torch
-from model.AVModel import AVModelLSTM, CNNTransformer
+from model.AVModel import CNNTransformer
 from utils.vlm_utils import vlm_inference
 import torch.nn.functional as F
 from torchvision.transforms import v2
@@ -181,7 +181,7 @@ def to_depth(image):
     image.convert(carla.ColorConverter.LogarithmicDepth)
     image_array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
     image_array = np.reshape(image_array, (image.height, image.width, 4))
-    image_array = image_array[:, :, :3]
+    image_array = image_array[:, :, :1]
     image_array = image_array[:, :, ::-1]
     image_array = image_array.copy()
     return image_array
@@ -205,15 +205,6 @@ def cleanup(client, ego_vehicle, vehicles, sensors):
     client.apply_batch([carla.command.DestroyActor(vehicle) for vehicle in vehicles])
     for sensor in sensors: sensor.destroy()
 
-class CropCustom(object):
-    def __call__(self, img):
-        img = v2.ToPILImage()(img)
-        width, height = img.size
-        top = int(height / 2.05)
-        bottom = int(height / 1.05)
-        cropped_img = img.crop((0, top, width, bottom))
-        return cropped_img
-
 def load_model(model_path, device):
     model = CNNTransformer()
     model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
@@ -221,13 +212,17 @@ def load_model(model_path, device):
     model.eval()
     return model
 
-#FIX THIS 
-def model_control(image, hlc, speed, light, model, device):
-    input_tensor = torch.tensor(image).permute(2, 0, 1)
-    input_tensor = input_tensor / 255.0
+def model_control(rgb, depth_map, hlc, speed, light, model, device):
+    rgb = torch.tensor(rgb).permute(2, 0, 1)
+    rgb = rgb / 255.0
 
-    #input_tensor = v2.Normalize(mean=(0.7309, 0.7063, 0.6706, 0.6635, 0.6541, 0.6407,), std=(0.2297, 0.2295, 0.2319, 0.2309, 0.2232, 0.2140,))(input_tensor)
-    input_tensor = input_tensor.unsqueeze(0)
+    depth_map = torch.tensor(depth_map).permute(2, 0, 1)
+    depth_map = depth_map / 255.0
+
+    rgb = v2.Normalize(mean=(0.4474, 0.4347, 0.4163), std=(0.1597, 0.1542, 0.1526))(rgb)
+    depth_map = v2.Normalize(mean=(0.4662,), std=(0.3947,))(depth_map)
+    rgb = rgb.unsqueeze(0)
+    depth_map = depth_map.unsqueeze(0)
 
     hlc = torch.tensor(hlc, dtype=torch.long)
     hlc = F.one_hot(hlc.to(torch.int64), num_classes=4)
@@ -241,12 +236,13 @@ def model_control(image, hlc, speed, light, model, device):
     light = F.one_hot(light.to(torch.int64), num_classes=4)
     light = light.unsqueeze(0)
 
-    input_tensor = input_tensor.to(device)
+    rgb = rgb.to(device)
+    depth_map = depth_map.to(device)
     hlc = hlc.to(device)
     speed = speed.to(device)
     light = light.to(device)
 
-    throttle, steer, brake = inference(model, input_tensor, hlc, speed, light)
+    throttle, steer, brake = inference(model, rgb, depth_map, hlc, speed, light)
 
     print(f"Throttle: {throttle}, steer: {steer}, brake: {brake}")
 
@@ -289,9 +285,9 @@ def mc_dropout_inference(model, input_tensor, main_image, wide_image, hlc, speed
 
     return throttle_mean, steer_mean, brake_mean
 
-def inference(model, input_tensor, hlc, speed, light):
+def inference(model, rgb, depth_map, hlc, speed, light):
     with torch.no_grad():
-        output = model(input_tensor, hlc, speed, light)
+        output = model(rgb, depth_map, hlc, speed, light)
     
     output = output.detach().cpu().numpy().flatten()
     throttle_brake, steer = output

@@ -1,122 +1,101 @@
 import torch
 import torch.nn as nn
 from .residual_block import ResidualBlock
-from .separableconv import SeparableConv2d
-from .convlstm import ConvLSTM
-
-class AVModelLSTM(nn.Module):
-    def __init__(self):
-        super(AVModelLSTM, self).__init__()
-        self.input_layer = nn.Conv2d(6, 8, kernel_size=5, padding=1, stride=4, padding_mode='reflect')
-
-        self.norm = nn.LayerNorm(8)
-        self.attention = nn.MultiheadAttention(embed_dim=8, num_heads=1, batch_first=True)
-        self.scale = nn.Parameter(torch.zeros(1))
-        self.act = nn.ReLU()
-
-        self.conv_layers = nn.Sequential(
-            ResidualBlock(in_channels=8, out_channels=8, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=8, out_channels=16, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=16, out_channels=32, kernel_size=3, stride=1, num_layers=2),
-            ResidualBlock(in_channels=32, out_channels=32, kernel_size=3, stride=1, num_layers=2),
-            nn.Dropout2d(0.2),
-        )
-
-        self.conv_lstm = ConvLSTM(input_dim=32, hidden_dim=32, kernel_size=(5, 5), num_layers=3, batch_first=True, bias=True, return_all_layers=False)
-
-        self.dense_layers = nn.Sequential(
-            nn.Linear(7497, 50),
-            nn.ReLU(),
-            nn.Linear(50, 10),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-        )
-
-        self.output_layer = nn.Linear(10, 2)
-
-    def use_attention(self, x):
-        batch_size, channels, height, width = x.size()
-        x_att = x.reshape(batch_size, channels, height * width).transpose(1, 2)
-        x_att = self.norm(x_att)
-        attention_output, _ = self.attention(x_att, x_att, x_att)
-        attention_output = attention_output.transpose(1, 2).reshape(batch_size, channels, height, width)
-        x = self.scale * attention_output + x
-        return x
-
-    def forward(self, img, hlc, speed, light):
-        x = self.input_layer(img)
-        x = self.use_attention(x)
-        x = self.act(x)
-
-        x = self.conv_layers(x)
-        x = x.unsqueeze(1)
-
-        _, last_states = self.conv_lstm(x)
-        x =  last_states[0][0]
-
-        #x = torch.mean(x.view(x.size(0), x.size(1), -1), dim=2) # GlobalAveragePooling2D
-        x = x.reshape(x.size(0), -1)
-        hlc = hlc.view(hlc.size(0), -1)
-        speed = speed.view(speed.size(0), -1)
-        light = light.view(light.size(0), -1)
-        x = torch.cat((x, hlc, speed, light), dim=1)
-
-        x = self.dense_layers(x)
-        x = self.output_layer(x)
-        out = torch.sigmoid(x)
-        return out
     
-class CNNFeatureExtractor(nn.Module):
+class RGBFeatureExtractor(nn.Module):
     def __init__(self):
-        super(CNNFeatureExtractor, self).__init__()
-        self.input_layer = nn.Conv2d(3, 8, kernel_size=5, padding=1, stride=2)
-
+        super(RGBFeatureExtractor, self).__init__()
+        self.input_layer = nn.Conv2d(3, 8, kernel_size=5)
         self.conv_layers = nn.Sequential(
             ResidualBlock(in_channels=8, out_channels=8, kernel_size=3, stride=2, num_layers=2),
             ResidualBlock(in_channels=8, out_channels=16, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=16, out_channels=32, kernel_size=3, stride=1, num_layers=2),
-            ResidualBlock(in_channels=32, out_channels=32, kernel_size=3, stride=1, num_layers=2),
-            nn.Dropout2d(0.2),
-            nn.AdaptiveAvgPool2d((4, 4))
+            ResidualBlock(in_channels=16, out_channels=32, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=32, out_channels=64, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=64, out_channels=64, kernel_size=3, stride=2, num_layers=2),
         )
 
     def forward(self, img):
         x = self.input_layer(img)
-        x = self.conv_layers(x)
-        out = x.reshape(x.size(0), -1)
+        out = self.conv_layers(x)
+        return out
+
+class DepthFeatureExtractor(nn.Module):
+    def __init__(self):
+        super(DepthFeatureExtractor, self).__init__()
+        self.input_layer = nn.Conv2d(1, 8, kernel_size=5)
+        self.conv_layers = nn.Sequential(
+            ResidualBlock(in_channels=8, out_channels=8, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=8, out_channels=16, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=16, out_channels=32, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=32, out_channels=64, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=64, out_channels=64, kernel_size=3, stride=2, num_layers=2),
+        )
+
+    def forward(self, depth):
+        x = self.input_layer(depth)
+        out = self.conv_layers(x)
         return out
 
 
 class CNNTransformer(nn.Module):
-    def __init__(self, img_size=224, patch_size=16, embed_dim=512, num_heads=8, depth=6, mlp_ratio=4.0):
+    def __init__(self, embed_dim=64, num_heads=4, depth=4, mlp_ratio=4.0):
         super(CNNTransformer, self).__init__()
-        self.cnn_extractor = CNNFeatureExtractor()
+        self.rgb_extractor = RGBFeatureExtractor()
+        self.depth_extractor = DepthFeatureExtractor()
 
-        transformer_layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads, dim_feedforward=int(mlp_ratio * embed_dim))
-        self.transformer = nn.TransformerEncoder(transformer_layer, num_layers=depth)
+        self.pos_emb = nn.Parameter(torch.zeros(1, 8 * 10 + 8 * 10, embed_dim))
+        self.speed_emb = nn.Linear(1, embed_dim)
+
+        self.transformer_layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads, dim_feedforward=int(mlp_ratio * embed_dim), activation='relu', batch_first=True)
+        self.transformer = nn.TransformerEncoder(self.transformer_layer, num_layers=depth)
+        self.ln = nn.LayerNorm(embed_dim)
+
+        self.global_pool = nn.AdaptiveAvgPool2d(1)
 
         self.regression_head = nn.Sequential(
-            nn.LayerNorm(521),
-            nn.Linear(521, 50),
+            nn.Linear(72, 50),
             nn.ReLU(),
             nn.Linear(50, 10),
             nn.ReLU(),
-            nn.Dropout(0.5),
             nn.Linear(10, 2)
         )
 
-    def forward(self, img, hlc, light, speed):
-        img_features = self.cnn_extractor(img)
+    def forward(self, rgb, depth, hlc, speed, light):
+        rgb_features = self.rgb_extractor(rgb)
+        depth_features = self.depth_extractor(depth)
 
-        img_features = img_features.unsqueeze(0)
-        img_features = self.transformer(img_features) 
-        img_features = img_features.squeeze(0)
+        rgb_bs, rgb_c, rgb_h, rgb_w = rgb_features.size()
+        rgb_features_reshaped = rgb_features.reshape(rgb_bs, rgb_c, rgb_h * rgb_w).transpose(1, 2)
 
-        hlc = hlc.view(hlc.size(0), -1)
-        speed = speed.view(speed.size(0), -1)
-        light = light.view(light.size(0), -1)
+        depth_bs, depth_c, depth_h, depth_w = depth_features.size()
+        depth_features_reshaped = depth_features.reshape(depth_bs, depth_c, depth_h * depth_w).transpose(1, 2)
 
-        x = torch.cat((img_features, hlc, speed, light), dim=1)
+        transformer_features = torch.cat((rgb_features_reshaped, depth_features_reshaped), dim=1)
+
+        transformer_features = transformer_features + self.pos_emb
+        transformer_features += self.speed_emb(speed).unsqueeze(1)
+        transformer_output = self.transformer(transformer_features)
+        transformer_output = self.ln(transformer_output)
+
+        rgb_features_out = transformer_output[:, :rgb_h * rgb_w, :].transpose(1, 2).reshape(rgb_bs, rgb_c, rgb_h, rgb_w)
+        depth_features_out = transformer_output[:, depth_h * depth_w:, :].transpose(1, 2).reshape(depth_bs, depth_c, depth_h, depth_w)
+
+        rgb_features = rgb_features + rgb_features_out
+        depth_features = depth_features + depth_features_out
+
+        rgb_features = self.global_pool(rgb_features)
+        rgb_features = torch.flatten(rgb_features, 1)
+
+        depth_features = self.global_pool(depth_features)
+        depth_features = torch.flatten(depth_features, 1)
+
+        combined_features = rgb_features + depth_features
+
+        hlc = torch.flatten(hlc, 1)
+        light = torch.flatten(light, 1)
+
+        x = torch.cat((combined_features, hlc, light), dim=1)
+
         x = self.regression_head(x)
         out = torch.sigmoid(x)
         return out
