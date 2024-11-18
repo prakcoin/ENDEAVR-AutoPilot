@@ -238,7 +238,7 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=str, default='av_model.pt', help='Name of saved model')
     args = parser.parse_args()
     
-    logging.basicConfig(filename='evaluation.log', 
+    logging.basicConfig(filename=f'evaluation_{args.model}.log', 
                         level=logging.INFO,
                         format='%(message)s' ) 
 
