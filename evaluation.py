@@ -225,6 +225,16 @@ def main(args):
     logging.info(f"Episode completion rate: {completed_episodes / episode_count}")
     logging.info(f"Average route completion: {sum(route_completions) / episode_count}")
     logging.info(f"Average infraction penalty: {sum(infraction_penalties) / episode_count}")
+    logging.info(
+        f"Infraction Breakdown:\n"
+        f"  - Vehicle Collisions: {num_vehicle_collisions}\n"
+        f"  - Walker Collisions: {num_walker_collisions}\n"
+        f"  - Other Collisions: {num_other_collisions}\n"
+        f"  - Red Light Infractions: {num_red_light_infractions}\n"
+        f"  - Timeouts: {num_timeouts}\n"
+        f"  - Wrong Turns: {num_wrong_turns}\n"
+        f"Total Infractions: {num_vehicle_collisions + num_walker_collisions + num_other_collisions + num_red_light_infractions + num_timeouts + num_wrong_turns}"
+    )
     logging.info(f"Average driving score: {sum(driving_scores) / episode_count}")
 
 if __name__ == '__main__':
