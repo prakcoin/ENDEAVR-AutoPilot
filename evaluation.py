@@ -22,9 +22,16 @@ WRONG_TURN_PENALTY = 0.7
 has_collision = False
 collision_type = None
 def collision_callback(data):
-    global has_collision
+    global has_collision, collision_type
     collision_type = type(data.other_actor)
     has_collision = True
+
+total_num_vehicle_collisions = 0
+total_num_walker_collisions = 0
+total_num_other_collisions = 0
+total_num_red_light_infractions = 0
+total_num_timeouts = 0
+total_num_wrong_turns = 0
 
 num_vehicle_collisions = 0
 num_walker_collisions = 0
@@ -44,7 +51,7 @@ def end_reached(ego_vehicle, end_point):
     return distance < 1.0
 
 def end_episode(ego_vehicle, end_point, frame, max_frames, turning_infraction):
-    global num_timeouts
+    global num_timeouts, total_num_timeouts
     done = False
     if end_reached(ego_vehicle, end_point):
         logging.info("Target reached, episode ending")
@@ -52,6 +59,7 @@ def end_episode(ego_vehicle, end_point, frame, max_frames, turning_infraction):
     elif frame >= max_frames:
         logging.info("Maximum frames reached, episode ending")
         num_timeouts += 1
+        total_num_timeouts += 1
         done = True
     elif turning_infraction:
         logging.info("Turning infraction, episode ending")
@@ -59,15 +67,18 @@ def end_episode(ego_vehicle, end_point, frame, max_frames, turning_infraction):
     return done
 
 def check_collision(prev_collision):
-    global has_collision, collision_type, num_other_collisions
+    global has_collision, collision_type, num_other_collisions, num_vehicle_collisions, num_walker_collisions, total_num_other_collisions, total_num_vehicle_collisions, total_num_walker_collisions
     if has_collision:
         if not prev_collision:
             if collision_type == carla.libcarla.Vehicle:
                 num_vehicle_collisions += 1
+                total_num_vehicle_collisions += 1
             elif collision_type == carla.libcarla.Walker:
                 num_walker_collisions += 1
+                total_num_walker_collisions += 1
             else:
                 num_other_collisions += 1
+                total_num_other_collisions += 1
             prev_collision = True
     else:
         prev_collision = False
@@ -76,13 +87,19 @@ def check_collision(prev_collision):
     return prev_collision
 
 def run_episode(world, model, device, ego_vehicle, rgb_cam, depth_cam, end_point, route, route_length, max_frames):
-    global has_collision, collision_type
+    global has_collision, collision_type, num_other_collisions, num_vehicle_collisions, num_walker_collisions, total_num_other_collisions, total_num_vehicle_collisions, total_num_walker_collisions
+    num_other_collisions = 0
+    num_vehicle_collisions = 0
+    num_walker_collisions = 0
     has_collision = False
-    global num_wrong_turns
+    global num_wrong_turns, total_num_wrong_turns
     num_wrong_turns = 0
 
-    global num_red_light_infractions
+    global num_red_light_infractions, total_num_red_light_infractions
     num_red_light_infractions = 0
+
+    global num_timeouts, total_num_timeouts
+    num_timeouts = 0
 
     dist_tracker = DistanceTracker()
     hlc_loader = HighLevelCommandLoader(ego_vehicle, world.get_map(), route)
@@ -132,6 +149,7 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, depth_cam, end_point
                 turning_infraction = True
             if turning_infraction:
                 num_wrong_turns += 1
+                total_num_wrong_turns += 1
             delta_yaw = 0
         
         prev_hlc = hlc
@@ -150,6 +168,7 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, depth_cam, end_point
                 if not running_light:
                     running_light = True
                     num_red_light_infractions += 1
+                    total_num_red_light_infractions += 1
             else:
                 running_light = False
         light = np.array([traffic_light_to_int(light_status)])
@@ -227,13 +246,13 @@ def main(args):
     logging.info(f"Average infraction penalty: {sum(infraction_penalties) / episode_count}")
     logging.info(
         f"Infraction Breakdown:\n"
-        f"  - Vehicle Collisions: {num_vehicle_collisions}\n"
-        f"  - Walker Collisions: {num_walker_collisions}\n"
-        f"  - Other Collisions: {num_other_collisions}\n"
-        f"  - Red Light Infractions: {num_red_light_infractions}\n"
-        f"  - Timeouts: {num_timeouts}\n"
-        f"  - Wrong Turns: {num_wrong_turns}\n"
-        f"Total Infractions: {num_vehicle_collisions + num_walker_collisions + num_other_collisions + num_red_light_infractions + num_timeouts + num_wrong_turns}"
+        f"  - Vehicle Collisions: {total_num_vehicle_collisions}\n"
+        f"  - Walker Collisions: {total_num_walker_collisions}\n"
+        f"  - Other Collisions: {total_num_other_collisions}\n"
+        f"  - Red Light Infractions: {total_num_red_light_infractions}\n"
+        f"  - Timeouts: {total_num_timeouts}\n"
+        f"  - Wrong Turns: {total_num_wrong_turns}\n"
+        f"Total Infractions: {total_num_vehicle_collisions + total_num_walker_collisions + total_num_other_collisions + total_num_red_light_infractions + total_num_timeouts + total_num_wrong_turns}"
     )
     logging.info(f"Average driving score: {sum(driving_scores) / episode_count}")
 
@@ -245,11 +264,11 @@ if __name__ == '__main__':
     parser.add_argument('--episodes', type=int, default=12, help='Number of episodes to evaluate for')
     parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')
     parser.add_argument('--route_file', type=str, default='routes/Town02_All.txt', help='Filepath for route file')
-    parser.add_argument('--model', type=str, default='av_model.pt', help='Name of saved model')
+    parser.add_argument('--model', type=str, default='av_model_nodepthnorm_nospeednorm.pt', help='Name of saved model')
     args = parser.parse_args()
     
-    logging.basicConfig(filename=f'evaluation_{args.model}.log', 
-                        level=logging.INFO,
-                        format='%(message)s' ) 
+    # logging.basicConfig(filename=f'evaluation_{args.model}.log', 
+    #                     level=logging.INFO,
+    #                     format='%(message)s' ) 
 
     main(args)
