@@ -230,7 +230,7 @@ def main(args):
             completed_episodes += 1
 
         route_completions.append(route_completion)
-        infraction_penalty = COLLISION_VEHICLE_PENALTY ** num_walker_collisions * \
+        infraction_penalty = COLLISION_VEHICLE_PENALTY ** num_vehicle_collisions * \
                             COLLISION_WALKER_PENALTY ** num_walker_collisions * \
                             COLLISION_OTHER_PENALTY ** num_other_collisions * \
                             RED_LIGHT_PENALTY ** num_red_light_infractions * \
