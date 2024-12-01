@@ -220,7 +220,6 @@ def model_control(rgb, depth_map, hlc, speed, light, model, device):
     depth_map = depth_map / 255.0
 
     rgb = v2.Normalize(mean=(0.4474, 0.4347, 0.4163), std=(0.1597, 0.1542, 0.1526))(rgb)
-    depth_map = v2.Normalize(mean=(0.4662,), std=(0.3947,))(depth_map)
     rgb = rgb.unsqueeze(0)
     depth_map = depth_map.unsqueeze(0)
 
@@ -229,7 +228,6 @@ def model_control(rgb, depth_map, hlc, speed, light, model, device):
     hlc = hlc.unsqueeze(0)
 
     speed = torch.tensor(speed, dtype=torch.float32)
-    speed = torch.clamp(speed / 40, 0, 1)
     speed = speed.unsqueeze(0)
 
     light = torch.tensor(light, dtype=torch.long)
@@ -243,9 +241,6 @@ def model_control(rgb, depth_map, hlc, speed, light, model, device):
     light = light.to(device)
 
     throttle, steer, brake = inference(model, rgb, depth_map, hlc, speed, light)
-
-    print(f"Throttle: {throttle}, steer: {steer}, brake: {brake}")
-
     return carla.VehicleControl(throttle=throttle, steer=steer, brake=brake)
 
 def enable_dropout(model):
