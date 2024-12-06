@@ -1,13 +1,12 @@
 import carla
 import cv2
 import numpy as np
-import open3d as o3d
 
 class RGBCamera:
-    def __init__(self, world, vehicle, size_x='320', size_y='240', fov='90', y_offset=0.0):
+    def __init__(self, world, vehicle, size_x='320', size_y='240', fov='90', x_pos=1.5, y_pos=0.0, z_pos=2.4):
         cam_bp = world.get_blueprint_library().find('sensor.camera.rgb')
         cam_transform = carla.Transform(
-            carla.Location(x=1.5, y=y_offset, z=2.4),
+            carla.Location(x=x_pos, y=y_pos, z=z_pos),
             carla.Rotation(pitch=0, yaw=0, roll=0)
         )
         
@@ -29,10 +28,10 @@ class RGBCamera:
         return self._sensor
 
 class DepthCamera:
-    def __init__(self, world, vehicle, size_x='320', size_y='240', fov='90', y_offset=0.0):
+    def __init__(self, world, vehicle, size_x='320', size_y='240', fov='90', x_pos=1.5, y_pos=0.0, z_pos=2.4):
         cam_bp = world.get_blueprint_library().find('sensor.camera.depth')
         cam_transform = carla.Transform(
-            carla.Location(x=1.5, y=y_offset, z=2.4),
+            carla.Location(x=x_pos, y=y_pos, z=z_pos),
             carla.Rotation(pitch=0, yaw=0, roll=0)
         )
         
@@ -54,9 +53,13 @@ class DepthCamera:
         return self._sensor
 
 def start_camera(world, vehicle):
-    rgb_cam_main = RGBCamera(world, vehicle, size_x='320', size_y='240', fov='90', y_offset=0)
-    depth_cam = DepthCamera(world, vehicle, size_x='320', size_y='240', fov='90', y_offset=0)
+    rgb_cam_main = RGBCamera(world, vehicle, size_x='320', size_y='240', fov='90', x_pos=1.5, y_pos=0, z_pos=2.4)
+    depth_cam = DepthCamera(world, vehicle, size_x='320', size_y='240', fov='90', x_pos=1.5, y_pos=0, z_pos=2.4)
     return rgb_cam_main, depth_cam
+
+def start_vlm_camera(world, vehicle):
+    rgb_cam = RGBCamera(world, vehicle, size_x='1024', size_y='512', fov='110', x_pos=-1.5, y_pos=0, z_pos=2.0)
+    return rgb_cam
 
 def k_matrix():
     image_w = 320
