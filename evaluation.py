@@ -239,6 +239,18 @@ def main(args):
         infraction_penalties.append(infraction_penalty)
         driving_score = infraction_penalty * route_completion
         driving_scores.append(driving_score)
+        logging.info(f"Infraction penalty: {infraction_penalty}")
+        logging.info(
+            f"Infraction Breakdown:\n"
+            f"  - Vehicle Collisions: {num_vehicle_collisions}\n"
+            f"  - Walker Collisions: {num_walker_collisions}\n"
+            f"  - Other Collisions: {num_other_collisions}\n"
+            f"  - Red Light Infractions: {num_red_light_infractions}\n"
+            f"  - Timeouts: {num_timeouts}\n"
+            f"  - Wrong Turns: {num_wrong_turns}\n"
+            f"Total Infractions: {num_vehicle_collisions + num_walker_collisions + num_other_collisions + num_red_light_infractions + num_timeouts + num_wrong_turns}"
+        )
+        logging.info(f"Driving score: {driving_score}")
         cleanup(client, ego_vehicle, vehicle_list, sensors)
 
     logging.info(f"Episode completion rate: {completed_episodes / episode_count}")
@@ -262,7 +274,7 @@ if __name__ == '__main__':
     parser.add_argument('--weather', type=str, default='ClearNoon', help='Weather condition to set')
     parser.add_argument('--max_frames', type=int, default=5000, help='Number of frames before terminating episode')
     parser.add_argument('--episodes', type=int, default=12, help='Number of episodes to evaluate for')
-    parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')
+    parser.add_argument('--vehicles', type=int, default=50, help='Number of vehicles present')
     parser.add_argument('--route_file', type=str, default='routes/Town02_All.txt', help='Filepath for route file')
     parser.add_argument('--model', type=str, default='av_model.pt', help='Name of saved model')
     args = parser.parse_args()
