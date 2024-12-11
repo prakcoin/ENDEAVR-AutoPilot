@@ -3,15 +3,15 @@ import torch.nn as nn
 from .residual_block import ResidualBlock
     
 class RGBFeatureExtractor(nn.Module):
-    def __init__(self):
+    def __init__(self, out_dim):
         super(RGBFeatureExtractor, self).__init__()
-        self.input_layer = nn.Conv2d(3, 8, kernel_size=5)
+        self.input_layer = nn.Conv2d(3, out_dim // 8, kernel_size=5)
         self.conv_layers = nn.Sequential(
-            ResidualBlock(in_channels=8, out_channels=8, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=8, out_channels=16, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=16, out_channels=32, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=32, out_channels=64, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=64, out_channels=64, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=out_dim // 8, out_channels=out_dim // 8, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=out_dim // 8, out_channels=out_dim // 4, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=out_dim // 4, out_channels=out_dim // 2, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=out_dim // 2, out_channels=out_dim, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=out_dim, out_channels=out_dim, kernel_size=3, stride=2, num_layers=2),
         )
 
     def forward(self, img):
@@ -20,15 +20,15 @@ class RGBFeatureExtractor(nn.Module):
         return out
 
 class DepthFeatureExtractor(nn.Module):
-    def __init__(self):
+    def __init__(self, out_dim):
         super(DepthFeatureExtractor, self).__init__()
-        self.input_layer = nn.Conv2d(1, 8, kernel_size=5)
+        self.input_layer = nn.Conv2d(1, out_dim // 8, kernel_size=5)
         self.conv_layers = nn.Sequential(
-            ResidualBlock(in_channels=8, out_channels=8, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=8, out_channels=16, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=16, out_channels=32, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=32, out_channels=64, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=64, out_channels=64, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=out_dim // 8, out_channels=out_dim // 8, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=out_dim // 8, out_channels=out_dim // 4, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=out_dim // 4, out_channels=out_dim // 2, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=out_dim // 2, out_channels=out_dim, kernel_size=3, stride=2, num_layers=2),
+            ResidualBlock(in_channels=out_dim, out_channels=out_dim, kernel_size=3, stride=2, num_layers=2),
         )
 
     def forward(self, depth):
@@ -38,10 +38,10 @@ class DepthFeatureExtractor(nn.Module):
 
 
 class CNNTransformer(nn.Module):
-    def __init__(self, embed_dim=64, num_heads=4, depth=4, mlp_ratio=4.0):
+    def __init__(self, out_dim=64, embed_dim=64, num_heads=4, depth=4, mlp_ratio=4.0):
         super(CNNTransformer, self).__init__()
-        self.rgb_extractor = RGBFeatureExtractor()
-        self.depth_extractor = DepthFeatureExtractor()
+        self.rgb_extractor = RGBFeatureExtractor(out_dim=out_dim)
+        self.depth_extractor = DepthFeatureExtractor(out_dim=out_dim)
 
         self.pos_emb = nn.Parameter(torch.zeros(1, 8 * 10 + 8 * 10, embed_dim))
         self.speed_emb = nn.Linear(1, embed_dim)
@@ -53,7 +53,7 @@ class CNNTransformer(nn.Module):
         self.global_pool = nn.AdaptiveAvgPool2d(1)
 
         self.regression_head = nn.Sequential(
-            nn.Linear(72, 50),
+            nn.Linear(73, 50),
             nn.ReLU(),
             nn.Linear(50, 10),
             nn.ReLU(),
@@ -73,7 +73,7 @@ class CNNTransformer(nn.Module):
         transformer_features = torch.cat((rgb_features_reshaped, depth_features_reshaped), dim=1)
 
         transformer_features = transformer_features + self.pos_emb
-        transformer_features += self.speed_emb(speed).unsqueeze(1)
+        #transformer_features += self.speed_emb(speed).unsqueeze(1)
         transformer_output = self.transformer(transformer_features)
         transformer_output = self.ln(transformer_output)
 
@@ -91,10 +91,11 @@ class CNNTransformer(nn.Module):
 
         combined_features = rgb_features + depth_features
 
+        speed = torch.flatten(speed, 1)
         hlc = torch.flatten(hlc, 1)
         light = torch.flatten(light, 1)
 
-        x = torch.cat((combined_features, hlc, light), dim=1)
+        x = torch.cat((combined_features, speed, hlc, light), dim=1)
 
         x = self.regression_head(x)
         out = torch.sigmoid(x)

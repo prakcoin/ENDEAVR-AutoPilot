@@ -32,8 +32,7 @@ def setup_traffic_manager(client):
 
 def setup_vehicle_for_tm(traffic_manager, ego_vehicle):
     ego_vehicle.set_autopilot(True)
-    traffic_manager.ignore_lights_percentage(ego_vehicle, 100)
-    traffic_manager.ignore_signs_percentage(ego_vehicle, 100)
+    traffic_manager.distance_to_leading_vehicle(ego_vehicle, 4.0)
     traffic_manager.set_desired_speed(ego_vehicle, 40)
 
 def set_red_light_time(world):
@@ -219,7 +218,7 @@ def model_control(rgb, depth_map, hlc, speed, light, model, device):
     depth_map = torch.tensor(depth_map).permute(2, 0, 1)
     depth_map = depth_map / 255.0
 
-    rgb = v2.Normalize(mean=(0.4474, 0.4347, 0.4163), std=(0.1597, 0.1542, 0.1526))(rgb)
+    rgb = v2.Normalize(mean=(0.4315, 0.4197, 0.4010), std=(0.1554, 0.1506, 0.1484))(rgb)
     rgb = rgb.unsqueeze(0)
     depth_map = depth_map.unsqueeze(0)
 
@@ -227,7 +226,8 @@ def model_control(rgb, depth_map, hlc, speed, light, model, device):
     hlc = F.one_hot(hlc.to(torch.int64), num_classes=4)
     hlc = hlc.unsqueeze(0)
 
-    speed = torch.tensor(speed, dtype=torch.float32)
+    speed = torch.FloatTensor(speed)
+    speed = torch.clamp(speed / 40.0, 0, 1.0).to(torch.float32)
     speed = speed.unsqueeze(0)
 
     light = torch.tensor(light, dtype=torch.long)
