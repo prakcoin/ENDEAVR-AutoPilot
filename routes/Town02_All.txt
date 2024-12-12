@@ -10,7 +10,3 @@
 40 69 272 Straight Left
 59 39 245 Right Straight
 82 17 155 Right Left
-20 53 0 Straight Right
-63 54 0 Right Left
-51 45 0 Left Right
-57 23 0 Straight Left
