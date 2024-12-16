@@ -1,6 +1,9 @@
 carla==0.9.15
+datasets==3.0.1
 h5py==3.11.0
+matplotlib==3.7.5
 numpy==1.24.4
-opencv_python==4.10.0.84
+opencv_contrib_python==4.10.0.84
+Pillow==11.0.0
 torch==2.3.1
 torchvision==0.18.1
