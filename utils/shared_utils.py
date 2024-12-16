@@ -308,7 +308,7 @@ def model_control(rgb, depth_map, hlc, speed, light, model, device):
     depth_map = torch.tensor(depth_map).permute(2, 0, 1)
     depth_map = depth_map / 255.0
 
-    rgb = v2.Normalize(mean=(0.4315, 0.4197, 0.4010), std=(0.1554, 0.1506, 0.1484))(rgb)
+    rgb = v2.Normalize(mean=(0.4427, 0.4308, 0.4135), std=(0.1528, 0.1481, 0.1468))(rgb)
     rgb = rgb.unsqueeze(0)
     depth_map = depth_map.unsqueeze(0)
 
