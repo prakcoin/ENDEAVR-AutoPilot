@@ -3,7 +3,6 @@ import random
 import numpy as np
 import torch
 from model.AVModel import CNNTransformer
-from utils.vlm_utils import vlm_inference
 import torch.nn.functional as F
 from torchvision.transforms import v2
 
@@ -366,7 +365,7 @@ def mc_dropout_inference(model, input_tensor, main_image, wide_image, hlc, speed
 
     if max(throttle_brake_var, steer_var) > 0.1:
         print("Uncertainty is high, querying VLM for expert correction...")
-        vlm_inference(main_image, wide_image, hlc, speed, light, steer_mean, brake_mean, throttle_mean)
+        pass
 
     return throttle_mean, steer_mean, brake_mean
 

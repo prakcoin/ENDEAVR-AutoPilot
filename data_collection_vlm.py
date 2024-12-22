@@ -11,7 +11,7 @@ from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle
                                 cleanup, update_spectator, read_routes, spawn_pedestrians,
                                 cleanup_pedestrians)
 from utils.sensors import start_vlm_camera, start_collision_sensor
-from utils.agents import LLMAgent
+from utils.agents import VLMAgent
 
 has_collision = False
 def collision_callback(data):
@@ -87,9 +87,9 @@ def run_episode(world, ego_vehicle, agent, rgb_cam, end_point, collect_correct, 
     global has_collision
     has_collision = False
 
-    images_dir = os.path.join("llm_data", "images")
+    images_dir = os.path.join("vlm_data", "images")
     os.makedirs(images_dir, exist_ok=True)
-    prompts_labels_path = os.path.join("llm_data", "prompts_labels.json")
+    prompts_labels_path = os.path.join("vlm_data", "prompts_labels.json")
 
     data = []
 
@@ -168,7 +168,7 @@ def main(args):
         print(f"Route from spawn point #{spawn_point_index} to #{end_point_index}")
 
         ego_vehicle = spawn_ego_vehicle(world, spawn_point)
-        agent = LLMAgent(ego_vehicle, traffic_manager)
+        agent = VLMAgent(ego_vehicle, traffic_manager)
         agent.set_route(route, end_point)
 
         if (args.vehicles > 0):
@@ -196,14 +196,14 @@ def main(args):
     print("Simulation complete")
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='CARLA Data Collection (LLM) Script')
+    parser = argparse.ArgumentParser(description='CARLA Data Collection (VLM) Script')
     parser.add_argument('--town', type=str, default='Town02', help='CARLA town to use')
     parser.add_argument('--max_frames', type=int, default=8000, help='Number of frames to collect per episode')
     parser.add_argument('--episodes', type=int, default=16, help='Number of episodes to collect data for')
     parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')
     parser.add_argument('--pedestrians', type=int, default=80, help='Number of pedestrians present')
-    parser.add_argument('--route_file', type=str, default='routes/Town02_LLM.txt', help='Filepath for route file')
-    parser.add_argument('--image_path', type=str, default='/content/drive/My Drive/AV Research/DriveLM/images/', help='Filepath for images')
+    parser.add_argument('--route_file', type=str, default='routes/Town02_VLM.txt', help='Filepath for route file')
+    parser.add_argument('--image_path', type=str, default='vlm_data/images/', help='Filepath for images')
     args = parser.parse_args()
 
     main(args)

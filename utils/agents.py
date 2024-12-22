@@ -105,9 +105,9 @@ class NoisyImitationLearningAgent:
     def get_next_action(self):
         return self.traffic_manager.get_next_action(self.vehicle)[0]
 
-class LLMAgent:
+class VLMAgent:
     """
-    This agent generates control signals with specific injected errors for LLM data collection.
+    This agent generates control signals with specific injected errors for VLM data collection.
     """
     def __init__(self, vehicle, traffic_manager):
         self.vehicle = vehicle
