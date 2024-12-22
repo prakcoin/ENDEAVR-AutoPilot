@@ -83,7 +83,8 @@ When the script finishes running, the following metrics will be saved in evaluat
 ## Citations
 ### Papers
 The following papers were instrumental in guiding this project. In particular, paper #1 was the most influential, as its model architecture directly inspired my work. Paper #2 was also very influential, as the incorporation of HLC, speed, and traffic light during training was directly adapted from this paper.
-1. [K. Chitta, A. Prakash, B. Jaeger, Z. Yu, K. Renz, and A. Geiger, 2023, PAMI'23, TransFuser: Imitation with Transformer-Based Sensor Fusion for Autonomous Driving] (https://arxiv.org/pdf/2205.15997)
+1. [K. Chitta, A. Prakash, B. Jaeger, Z. Yu, K. Renz, and A. Geiger, 2023, PAMI'23, TransFuser: Imitation with Transformer-Based Sensor Fusion for Autonomous Driving](https://arxiv.org/pdf/2205.15997)
+
 2. [H. Haavaldsen M. Aasbø and F. Lindseth, 2019, NAIS 2019, Autonomous Vehicle Control: End-to-end Learning in Simulated Urban Environments](https://arxiv.org/pdf/1905.06712)
 3. [I. Vasiljević, J. Musić, J. Mendes & J. Lima, 2023, OL2A 2023, Adaptive Convolutional Neural Network for Predicting Steering Angle and Acceleration on Autonomous Driving Scenario](https://link.springer.com/chapter/10.1007/978-3-031-53036-4_10)
 4. [Y. Wang, D. Liu, H. Jeon, Z. Chu and E. T. Matson, 2019, ICAART 2019, End-to-end Learning Approach for Autonomous Driving: A Convolutional Neural Network Model](https://pdfs.semanticscholar.org/8944/67dc8db83f1bb07563c1f0f24361e5e57115.pdf)
