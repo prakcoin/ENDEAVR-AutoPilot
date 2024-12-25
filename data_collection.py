@@ -90,13 +90,8 @@ def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam, depth_cam, en
                 'hlc': np.array([road_option_to_int(agent.get_next_action())]),
                 'light': np.array([traffic_light_to_int(get_traffic_light_status(ego_vehicle))])
             }
-            if args.collect_steer:
-                if abs(control.steer) >= 0.05:
-                    for key, value in frame_data.items():
-                        episode_data[key].append(value)
-            else:
-                for key, value in frame_data.items():
-                    episode_data[key].append(value)
+            for key, value in frame_data.items():
+                episode_data[key].append(value)
 
         world.tick()
         frame += 1
@@ -161,7 +156,6 @@ if __name__ == '__main__':
     parser.add_argument('--episodes', type=int, default=16, help='Number of episodes to collect data for')
     parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
-    parser.add_argument('--collect_steer', action="store_true", help='Only collect steering data')
     args = parser.parse_args()
 
     main(args)
