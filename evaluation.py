@@ -4,11 +4,13 @@ import torch
 import carla
 import logging
 import numpy as np
-from utils.sensors import start_camera, start_collision_sensor
+from PIL import Image
+from openai import OpenAI
+from utils.sensors import start_camera, start_vlm_camera, start_collision_sensor
 from utils.shared_utils import (init_world, read_routes, create_route, traffic_light_to_int, to_depth,
                                 spawn_ego_vehicle, spawn_vehicles, setup_traffic_manager, traffic_light_to_int,
-                                cleanup, update_spectator, to_rgb, calculate_delta_yaw, 
-                                model_control, load_model)
+                                cleanup, update_spectator, to_rgb, calculate_delta_yaw, spawn_pedestrians, cleanup_pedestrians, 
+                                model_control, load_model, inject_vehicle_noise, vlm_inference)
 from utils.dist_tracker import DistanceTracker
 from utils.hlc_loader import HighLevelCommandLoader
 
@@ -86,7 +88,7 @@ def check_collision(prev_collision):
     collision_type = None
     return prev_collision
 
-def run_episode(world, model, device, ego_vehicle, rgb_cam, depth_cam, end_point, route, route_length, max_frames):
+def run_episode(world, model, device, ego_vehicle, rgb_cam, vlm_cam, depth_cam, end_point, route, route_length, max_frames, openai_client):
     global has_collision, collision_type, num_other_collisions, num_vehicle_collisions, num_walker_collisions, total_num_other_collisions, total_num_vehicle_collisions, total_num_walker_collisions
     num_other_collisions = 0
     num_vehicle_collisions = 0
@@ -157,6 +159,7 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, depth_cam, end_point
         update_spectator(spectator, ego_vehicle)
         sensor_data = np.array(to_rgb(rgb_cam.get_sensor_data()))
         depth_map = np.array(to_depth(depth_cam.get_sensor_data()))
+        vlm_image = Image.fromarray(to_rgb(vlm_cam.get_sensor_data()))
 
         light_status = -1
         if ego_vehicle.is_at_traffic_light():
@@ -174,6 +177,8 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, depth_cam, end_point
         light = np.array([traffic_light_to_int(light_status)])
 
         control = model_control(sensor_data, depth_map, hlc, speed_km_h, light, model, device)
+        vlm_control = vlm_inference(openai_client, vlm_image, hlc, speed_km_h, control.steer, control.brake, control.throttle)
+        print(vlm_control)
         ego_vehicle.apply_control(control)
         dist_tracker.update(ego_vehicle)
         world.tick()
@@ -195,6 +200,11 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_model(model_path, device)
 
+    openai_client = OpenAI(
+        api_key=os.getenv('OPENAI_API_KEY'),
+        base_url=f"http://{args.ip}:{args.port}/v1",
+    )
+
     world, client = init_world(args.town)
     world.set_weather(getattr(carla.WeatherParameters, args.weather))
 
@@ -202,7 +212,7 @@ def main(args):
     route_configs = read_routes(args.route_file)
     episode_count = min(len(route_configs), args.episodes)
     
-    vehicle_list = []
+    all_id, all_actors, vehicle_list = [], [], [], []
     completed_episodes = 0
     route_completions = []
     infraction_penalties = []
@@ -219,13 +229,18 @@ def main(args):
         ego_vehicle = spawn_ego_vehicle(world, spawn_point)
         if (args.vehicles > 0):
             vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
+            inject_vehicle_noise(world, vehicle_list, traffic_manager)
+        if (args.pedestrians > 0):
+            all_id, all_actors, _ = spawn_pedestrians(world, client, args.pedestrians)
 
-        rgb_cam_main, depth_cam = start_camera(world, ego_vehicle)
+
+        rgb_cam, depth_cam = start_camera(world, ego_vehicle)
+        vlm_cam = start_vlm_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
-        sensors = [rgb_cam_main.get_sensor(), depth_cam.get_sensor(), collision_sensor]
+        sensors = [rgb_cam.get_sensor(), vlm_cam.get_sensor(), depth_cam.get_sensor(), collision_sensor]
 
-        episode_completed, route_completion = run_episode(world, model, device, ego_vehicle, rgb_cam_main, depth_cam, end_point, route, route_length, args.max_frames)
+        episode_completed, route_completion = run_episode(world, model, device, ego_vehicle, rgb_cam, vlm_cam, depth_cam, end_point, route, route_length, args.max_frames, openai_client)
         if episode_completed:
             completed_episodes += 1
 
@@ -252,6 +267,7 @@ def main(args):
         )
         logging.info(f"Driving score: {driving_score}")
         cleanup(client, ego_vehicle, vehicle_list, sensors)
+        cleanup_pedestrians(client, all_id, all_actors)
 
     logging.info(f"Episode completion rate: {completed_episodes / episode_count}")
     logging.info(f"Average route completion: {sum(route_completions) / episode_count}")
@@ -275,8 +291,11 @@ if __name__ == '__main__':
     parser.add_argument('--max_frames', type=int, default=5000, help='Number of frames before terminating episode')
     parser.add_argument('--episodes', type=int, default=12, help='Number of episodes to evaluate for')
     parser.add_argument('--vehicles', type=int, default=50, help='Number of vehicles present')
+    parser.add_argument('--pedestrians', type=int, default=50, help='Number of pedestrians present')
     parser.add_argument('--route_file', type=str, default='routes/Town02_All.txt', help='Filepath for route file')
     parser.add_argument('--model', type=str, default='av_model.pt', help='Name of saved model')
+    parser.add_argument('--ip', type=str, default='localhost', help='IP address of VLM server')
+    parser.add_argument('--port', type=str, default='8000', help='Port of VLM server')
     args = parser.parse_args()
     
     logging.basicConfig(filename=f'evaluation_{args.model}.log', 

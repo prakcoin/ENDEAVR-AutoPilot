@@ -3,7 +3,6 @@ import os
 import random
 import numpy as np
 import carla
-from datasets import Dataset
 from PIL import Image
 import json
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
@@ -146,7 +145,7 @@ def main(args):
     route_configs = read_routes(args.route_file)
     episode_count = args.episodes
 
-    vehicle_list = []
+    all_id, all_actors, vehicle_list = [], [], [], []
     restart = False
     episode = 0
     collect_correct = True
@@ -173,7 +172,8 @@ def main(args):
 
         if (args.vehicles > 0):
             vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager, cars_only=False)
-        all_id, all_actors, _ = spawn_pedestrians(world, client, args.pedestrians)
+        if (args.pedestrians > 0):
+            all_id, all_actors, _ = spawn_pedestrians(world, client, args.pedestrians)
 
         rgb_cam = start_vlm_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
