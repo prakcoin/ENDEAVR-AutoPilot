@@ -57,10 +57,6 @@ def start_camera(world, vehicle):
     depth_cam = DepthCamera(world, vehicle, size_x='320', size_y='240', fov='90', x_pos=1.5, y_pos=0, z_pos=2.4)
     return rgb_cam_main, depth_cam
 
-def start_vlm_camera(world, vehicle):
-    rgb_cam = RGBCamera(world, vehicle, size_x='1024', size_y='512', fov='110', x_pos=-1.5, y_pos=0, z_pos=2.0)
-    return rgb_cam
-
 def k_matrix():
     image_w = 320
     image_h = 240

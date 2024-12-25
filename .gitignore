@@ -6,3 +6,4 @@ images/
 *.h5
 *.log
 *.zip
+*.env

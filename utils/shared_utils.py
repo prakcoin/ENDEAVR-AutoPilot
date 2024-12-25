@@ -142,90 +142,6 @@ def spawn_vehicles(world, client, n_vehicles, traffic_manager, cars_only=True):
             vehicles_list.append(response.actor_id)
     return vehicles_list
 
-def inject_vehicle_noise(world, vehicles_list, traffic_manager):
-    for vehicle_id in vehicles_list:
-        vehicle = world.get_actor(vehicle_id)
-        traffic_manager.ignore_lights_percentage(vehicle, 50)
-        traffic_manager.ignore_signs_percentage(vehicle, 50)
-
-def get_pedestrian_spawn_points(world, n):
-    spawn_points = []
-    for i in range(n):
-        spawn_point = carla.Transform()
-        loc = world.get_random_location_from_navigation()
-        if (loc != None):
-            spawn_point.location = loc
-            spawn_points.append(spawn_point)
-    return spawn_points
-
-def spawn_pedestrians(world, client, n_pedestrians, percentagePedestriansRunning=0.0, percentagePedestriansCrossing=1.0):
-    walkers_list = []
-    all_id = []
-
-    spawn_points = get_pedestrian_spawn_points(world, n_pedestrians)
-    blueprintsWalkers = get_actor_blueprints(world, 'walker.pedestrian.*', '2')
-
-    batch = []
-    walker_speed = []
-    for spawn_point in spawn_points:
-        walker_bp = random.choice(blueprintsWalkers)
-        # set as not invincible
-        #if walker_bp.has_attribute('is_invincible'):
-        walker_bp.set_attribute('is_invincible', 'false')
-        # set the max speed
-        if walker_bp.has_attribute('speed'):
-            if (random.random() > percentagePedestriansRunning):
-                # walking
-                walker_speed.append(walker_bp.get_attribute('speed').recommended_values[1])
-            else:
-                # running
-                walker_speed.append(walker_bp.get_attribute('speed').recommended_values[2])
-        else:
-            print("Walker has no speed")
-            walker_speed.append(0.0)
-        batch.append(SpawnActor(walker_bp, spawn_point))
-    results = client.apply_batch_sync(batch, True)
-    walker_speed2 = []
-    for i in range(len(results)):
-        if results[i].error:
-            print(results[i].error)
-        else:
-            walkers_list.append({"id": results[i].actor_id})
-            walker_speed2.append(walker_speed[i])
-    walker_speed = walker_speed2
-    # 3. we spawn the walker controller
-    batch = []
-    walker_controller_bp = world.get_blueprint_library().find('controller.ai.walker')
-    for i in range(len(walkers_list)):
-        batch.append(SpawnActor(walker_controller_bp, carla.Transform(), walkers_list[i]["id"]))
-    results = client.apply_batch_sync(batch, True)
-    for i in range(len(results)):
-        if results[i].error:
-            print(results[i].error)
-        else:
-            walkers_list[i]["con"] = results[i].actor_id
-    # 4. we put together the walkers and controllers id to get the objects from their id
-    for i in range(len(walkers_list)):
-        all_id.append(walkers_list[i]["con"])
-        all_id.append(walkers_list[i]["id"])
-    all_actors = world.get_actors(all_id)
-
-    # wait for a tick to ensure client receives the last transform of the walkers we have just created
-    world.tick()
-
-    # 5. initialize each controller and set target to walk to (list is [controler, actor, controller, actor ...])
-    # set how many pedestrians can cross the road
-    world.set_pedestrians_cross_factor(percentagePedestriansCrossing)
-    for i in range(0, len(all_id), 2):
-        # start walker
-        all_actors[i].start()
-        # set walk to random point
-        all_actors[i].go_to_location(world.get_random_location_from_navigation())
-        # max speed
-        all_actors[i].set_max_speed(float(walker_speed[int(i/2)]))
-    
-    return all_id, all_actors, walkers_list
-
 def update_spectator(spectator, vehicle):
     ego_transform = vehicle.get_transform()
     spectator_transform = carla.Transform(
@@ -288,11 +204,6 @@ def cleanup(client, ego_vehicle, vehicles, sensors):
     client.apply_batch([carla.command.DestroyActor(vehicle) for vehicle in vehicles])
     for sensor in sensors: sensor.destroy()
 
-def cleanup_pedestrians(client, all_id, all_actors):
-    for i in range(0, len(all_id), 2):
-        all_actors[i].stop()
-    client.apply_batch([carla.command.DestroyActor(x) for x in all_id])
-
 def load_model(model_path, device):
     model = CNNTransformer()
     model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
@@ -331,43 +242,6 @@ def model_control(rgb, depth_map, hlc, speed, light, model, device):
 
     throttle, steer, brake = inference(model, rgb, depth_map, hlc, speed, light)
     return carla.VehicleControl(throttle=throttle, steer=steer, brake=brake)
-
-def enable_dropout(model):
-    for m in model.modules():
-        if isinstance(m, torch.nn.Dropout):
-            m.train()
-
-def mc_dropout_inference(model, input_tensor, main_image, wide_image, hlc, speed, light, num_samples=25):
-    enable_dropout(model)
-    predictions = []
-
-    for _ in range(num_samples):
-        with torch.no_grad():
-            output = model(input_tensor, hlc, speed, light)
-            predictions.append(output.detach().cpu().numpy())
-
-    predictions = np.stack(predictions, axis=0)
-    mean_predictions = np.mean(predictions, axis=0)
-    var_predictions = np.var(predictions, axis=0)
-
-    throttle_brake_mean, steer_mean = mean_predictions[0]
-    throttle_brake_var, steer_var = var_predictions[0]
-
-    throttle_mean, brake_mean = 0.0, 0.0
-    if throttle_brake_mean >= 0.5:
-        throttle_mean = (throttle_brake_mean - 0.5) / 0.5
-    else:
-        brake_mean = (0.5 - throttle_brake_mean) / 0.5
-    
-    steer_mean = (float(steer_mean) * 2.0) - 1.0
-
-    print(max(throttle_brake_var, steer_var))
-
-    if max(throttle_brake_var, steer_var) > 0.1:
-        print("Uncertainty is high, querying VLM for expert correction...")
-        pass
-
-    return throttle_mean, steer_mean, brake_mean
 
 def inference(model, rgb, depth_map, hlc, speed, light):
     with torch.no_grad():
