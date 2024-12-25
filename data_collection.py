@@ -7,7 +7,7 @@ from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle
                                 spawn_ego_vehicle, spawn_vehicles, create_route, to_rgb, to_depth,
                                 road_option_to_int, cleanup, update_spectator, read_routes, 
                                 get_traffic_light_status, traffic_light_to_int)
-from utils.sensors import start_camera, start_collision_sensor
+from utils.sensors import start_camera, start_collision_sensor, calculate_depth
 from utils.agents import NoisyImitationLearningAgent
 
 has_collision = False
@@ -47,7 +47,7 @@ def update_data_file(episode_data, episode_count):
             data_array = np.array(data_array)
             file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
 
-def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam, depth_cam, end_point, args):
+def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam_main, rgb_cam_left, rgb_cam_right, end_point, args):
     global has_collision
     has_collision = False
 
@@ -75,15 +75,17 @@ def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam, depth_cam, en
         if noisy_control:
             ego_vehicle.apply_control(noisy_control)
 
-        rgb_data = to_rgb(rgb_cam.get_sensor_data())
-        depth_map = to_depth(depth_cam.get_sensor_data())
+        rgb_data_main = to_rgb(rgb_cam_main.get_sensor_data())
+        rgb_data_left = to_rgb(rgb_cam_left.get_sensor_data())
+        rgb_data_right = to_rgb(rgb_cam_right.get_sensor_data())
+        depth_map = calculate_depth(rgb_data_left, rgb_data_right)
 
         velocity = ego_vehicle.get_velocity()
         speed_km_h = (3.6 * np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2))
 
         if not agent.noise:
             frame_data = {
-                'rgb': np.array(rgb_data),
+                'rgb': np.array(rgb_data_main),
                 'depth': np.array(depth_map),
                 'controls': np.array([control.steer, control.throttle, control.brake]),
                 'speed': np.array([speed_km_h]),
@@ -130,13 +132,13 @@ def main(args):
         if (args.vehicles > 0):
             vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
 
-        rgb_cam, depth_cam = start_camera(world, ego_vehicle)
+        rgb_cam_main, rgb_cam_left, rgb_cam_right = start_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
-        sensors = [rgb_cam.get_sensor(), depth_cam.get_sensor(), collision_sensor]
+        sensors = [rgb_cam_main.get_sensor(), rgb_cam_left.get_sensor(), rgb_cam_right.get_sensor(), collision_sensor]
         setup_vehicle_for_tm(traffic_manager, ego_vehicle)
 
-        run_episode(world, episode, ego_vehicle, agent, rgb_cam, depth_cam, end_point, args)
+        run_episode(world, episode, ego_vehicle, agent, rgb_cam_main, rgb_cam_left, rgb_cam_right, end_point, args)
         if (has_collision):
             num_tries += 1
             episode -= 1

@@ -4,7 +4,7 @@ import torch
 import carla
 import logging
 import numpy as np
-from utils.sensors import start_camera, start_collision_sensor
+from utils.sensors import start_camera, start_collision_sensor, calculate_depth
 from utils.shared_utils import (init_world, read_routes, create_route, traffic_light_to_int, to_depth,
                                 spawn_ego_vehicle, spawn_vehicles, setup_traffic_manager, traffic_light_to_int,
                                 cleanup, update_spectator, to_rgb, calculate_delta_yaw, 
@@ -86,7 +86,7 @@ def check_collision(prev_collision):
     collision_type = None
     return prev_collision
 
-def run_episode(world, model, device, ego_vehicle, rgb_cam, depth_cam, end_point, route, route_length, max_frames):
+def run_episode(world, model, device, ego_vehicle, rgb_cam_main, rgb_cam_left, rgb_cam_right, end_point, route, route_length, max_frames):
     global has_collision, collision_type, num_other_collisions, num_vehicle_collisions, num_walker_collisions, total_num_other_collisions, total_num_vehicle_collisions, total_num_walker_collisions
     num_other_collisions = 0
     num_vehicle_collisions = 0
@@ -155,8 +155,10 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, depth_cam, end_point
         prev_hlc = hlc
 
         update_spectator(spectator, ego_vehicle)
-        sensor_data = np.array(to_rgb(rgb_cam.get_sensor_data()))
-        depth_map = np.array(to_depth(depth_cam.get_sensor_data()))
+        rgb_data_main = to_rgb(rgb_cam_main.get_sensor_data())
+        rgb_data_left = to_rgb(rgb_cam_left.get_sensor_data())
+        rgb_data_right = to_rgb(rgb_cam_right.get_sensor_data())
+        depth_map = calculate_depth(rgb_data_left, rgb_data_right)
 
         light_status = -1
         if ego_vehicle.is_at_traffic_light():
@@ -173,7 +175,7 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, depth_cam, end_point
                 running_light = False
         light = np.array([traffic_light_to_int(light_status)])
 
-        control = model_control(sensor_data, depth_map, hlc, speed_km_h, light, model, device)
+        control = model_control(rgb_data_main, depth_map, hlc, speed_km_h, light, model, device)
         ego_vehicle.apply_control(control)
         dist_tracker.update(ego_vehicle)
         world.tick()
@@ -220,12 +222,12 @@ def main(args):
         if (args.vehicles > 0):
             vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
 
-        rgb_cam_main, depth_cam = start_camera(world, ego_vehicle)
+        rgb_cam_main, rgb_cam_left, rgb_cam_right = start_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
-        sensors = [rgb_cam_main.get_sensor(), depth_cam.get_sensor(), collision_sensor]
+        sensors = [rgb_cam_main.get_sensor(), rgb_cam_left.get_sensor(), rgb_cam_right.get_sensor(), collision_sensor]
 
-        episode_completed, route_completion = run_episode(world, model, device, ego_vehicle, rgb_cam_main, depth_cam, end_point, route, route_length, args.max_frames)
+        episode_completed, route_completion = run_episode(world, model, device, ego_vehicle, rgb_cam_main, rgb_cam_left, rgb_cam_right, end_point, route, route_length, args.max_frames)
         if episode_completed:
             completed_episodes += 1
 
