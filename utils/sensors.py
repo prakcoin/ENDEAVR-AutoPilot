@@ -62,9 +62,3 @@ def start_collision_sensor(world, vehicle):
     transform = carla.Transform(carla.Location(x=2.5, z=0.7))
     sensor = world.spawn_actor(bp, transform, attach_to=vehicle)
     return sensor
-
-def start_lane_invasion_sensor(world, vehicle):
-    bp = world.get_blueprint_library().find('sensor.other.lane_invasion')
-    transform = carla.Transform(carla.Location(x=2.5, z=0.7))
-    sensor = world.spawn_actor(bp, transform, attach_to=vehicle)
-    return sensor
