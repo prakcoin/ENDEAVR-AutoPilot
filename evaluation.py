@@ -6,7 +6,7 @@ import logging
 import numpy as np
 from PIL import Image
 from openai import OpenAI
-from utils.sensors import start_camera, start_vlm_camera, start_collision_sensor
+from utils.sensors import start_camera, start_vlm_camera, start_collision_sensor, start_obstacle_detector
 from utils.shared_utils import (init_world, read_routes, create_route, traffic_light_to_int, to_depth,
                                 spawn_ego_vehicle, spawn_vehicles, setup_traffic_manager, traffic_light_to_int,
                                 cleanup, update_spectator, to_rgb, calculate_delta_yaw, spawn_pedestrians, cleanup_pedestrians, 
@@ -27,6 +27,11 @@ def collision_callback(data):
     global has_collision, collision_type
     collision_type = type(data.other_actor)
     has_collision = True
+
+obstacle_detected = False
+def obstacle_callback(data):
+    global obstacle_detected
+    obstacle_detected = True
 
 total_num_vehicle_collisions = 0
 total_num_walker_collisions = 0
@@ -103,6 +108,9 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, vlm_cam, depth_cam, 
     global num_timeouts, total_num_timeouts
     num_timeouts = 0
 
+    global obstacle_detected
+    obstacle_detected = False
+
     dist_tracker = DistanceTracker()
     hlc_loader = HighLevelCommandLoader(ego_vehicle, world.get_map(), route)
     spectator = world.get_spectator()
@@ -177,9 +185,12 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, vlm_cam, depth_cam, 
         light = np.array([traffic_light_to_int(light_status)])
 
         control = model_control(sensor_data, depth_map, hlc, speed_km_h, light, model, device)
-        vlm_control = vlm_inference(openai_client, vlm_image, hlc, speed_km_h, control.steer, control.brake, control.throttle)
-        print(vlm_control)
-        ego_vehicle.apply_control(control)
+        if obstacle_detected:
+            vlm_control = vlm_inference(openai_client, vlm_image, hlc, speed_km_h, control.steer, control.brake, control.throttle)
+            print(vlm_control)
+            ego_vehicle.apply_control(vlm_control)
+        else:
+            ego_vehicle.apply_control(control)
         dist_tracker.update(ego_vehicle)
         world.tick()
         frame += 1
@@ -238,7 +249,9 @@ def main(args):
         vlm_cam = start_vlm_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
-        sensors = [rgb_cam.get_sensor(), vlm_cam.get_sensor(), depth_cam.get_sensor(), collision_sensor]
+        obstacle_detector = start_obstacle_detector(world, ego_vehicle)
+        obstacle_detector.listen(obstacle_callback)
+        sensors = [rgb_cam.get_sensor(), vlm_cam.get_sensor(), depth_cam.get_sensor(), collision_sensor, obstacle_detector]
 
         episode_completed, route_completion = run_episode(world, model, device, ego_vehicle, rgb_cam, vlm_cam, depth_cam, end_point, route, route_length, args.max_frames, openai_client)
         if episode_completed:

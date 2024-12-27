@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import io
 import base64
+import re
 from PIL import Image
 from model.AVModel import CNNTransformer
 import torch.nn.functional as F
@@ -432,19 +433,27 @@ def generate_prompt(hlc, speed, steer, brake, throttle):
     )
     return prompt
 
+def parse_chat_response(chat_response):
+    pattern = r"Steering Angle: ([+-]?\d*\.\d+|\d+).*?Brake: ([+-]?\d*\.\d+|\d+).*?Throttle: ([+-]?\d*\.\d+|\d+)"
+    match = re.search(pattern, chat_response, re.DOTALL)
+
+    steer, brake, throttle = float(match.group(1)), float(match.group(2)), float(match.group(3))
+    return carla.VehicleControl(throttle=throttle, steer=steer, brake=brake)
+
 def vlm_inference(openai_client, image, hlc, speed, steer, brake, throttle):
     image = encode_image(reduce_image_size(convert_to_rgb(image)))
     prompt = generate_prompt(hlc, speed, steer, brake, throttle)
     chat_response = openai_client.chat.completions.create(
-    model="prakcoin/QwENDEAVR-VL",
-    messages=[
-        {"role": "user", "content": [
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{image}"},
-            },
-            {"type": "text", "text": prompt}
-        ]}
-    ]
+        model="prakcoin/QwENDEAVR-VL",
+        messages=[
+            {"role": "user", "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{image}"},
+                },
+                {"type": "text", "text": prompt}
+            ]}
+        ]
     )
-    print("Chat response:", chat_response)
+    vlm_control = parse_chat_response(chat_response)
+    return vlm_control
