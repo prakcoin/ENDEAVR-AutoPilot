@@ -145,7 +145,7 @@ def main(args):
     route_configs = read_routes(args.route_file)
     episode_count = args.episodes
 
-    all_id, all_actors, vehicle_list = [], [], [], []
+    all_id, all_actors, vehicle_list = [], [], []
     restart = False
     episode = 0
     collect_correct = True
