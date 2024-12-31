@@ -137,7 +137,7 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, vlm_cam, depth_cam, 
         speed_m_s = np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2)
         speed_km_h = 3.6 * speed_m_s
 
-        speed_km_h = np.array([speed_km_h])
+        speed_km_h_cnn = np.array([speed_km_h])
 
         hlc = hlc_loader.get_next_hlc()
         if hlc != 0:
@@ -184,7 +184,7 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, vlm_cam, depth_cam, 
                 running_light = False
         light = np.array([traffic_light_to_int(light_status)])
 
-        control = model_control(sensor_data, depth_map, hlc, speed_km_h, light, model, device)
+        control = model_control(sensor_data, depth_map, hlc, speed_km_h_cnn, light, model, device)
         if obstacle_detected:
             vlm_control = vlm_inference(openai_client, vlm_image, hlc, speed_km_h, control.steer, control.brake, control.throttle)
             print(vlm_control)
@@ -223,7 +223,7 @@ def main(args):
     route_configs = read_routes(args.route_file)
     episode_count = min(len(route_configs), args.episodes)
     
-    all_id, all_actors, vehicle_list = [], [], [], []
+    all_id, all_actors, vehicle_list = [], [], []
     completed_episodes = 0
     route_completions = []
     infraction_penalties = []
@@ -239,7 +239,7 @@ def main(args):
 
         ego_vehicle = spawn_ego_vehicle(world, spawn_point)
         if (args.vehicles > 0):
-            vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
+            vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager, cars_only=False)
             inject_vehicle_noise(world, vehicle_list, traffic_manager)
         if (args.pedestrians > 0):
             all_id, all_actors, _ = spawn_pedestrians(world, client, args.pedestrians)
@@ -311,7 +311,7 @@ if __name__ == '__main__':
     parser.add_argument('--port', type=str, default='8000', help='Port of VLM server')
     args = parser.parse_args()
     
-    logging.basicConfig(filename=f'evaluation_{args.model}.log', 
+    logging.basicConfig(filename=f'evaluation_{args.model}_vlm.log', 
                         level=logging.INFO,
                         format='%(message)s' ) 
 
