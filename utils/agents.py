@@ -112,7 +112,6 @@ class VLMAgent:
     def __init__(self, vehicle, traffic_manager):
         self.vehicle = vehicle
         self.traffic_manager = traffic_manager
-        self.error_probability = 0.5
 
     def run_step(self):
         """
@@ -126,11 +125,28 @@ class VLMAgent:
             brake=correct_control.brake
         )
         
-        if random.random() < self.error_probability:
+        error_type = random.choice(['steering_noise', 'throttle_brake_noise', 'swap_throttle_brake'])
+            
+        if error_type == 'steering_noise':
             steer_offset = random.choice([random.uniform(-0.5, -0.1), random.uniform(0.1, 0.5)])
             incorrect_control.steer += steer_offset
             incorrect_control.steer = np.clip(incorrect_control.steer, -1.0, 1.0)
-        else:
+        
+        elif error_type == 'throttle_brake_noise':
+            if incorrect_control.throttle > 0.0:
+                throttle_offset = random.choice([random.uniform(-0.5, -0.1), random.uniform(0.1, 0.5)])
+                incorrect_control.throttle += throttle_offset
+                incorrect_control.throttle = np.clip(incorrect_control.throttle, 0, 1.0)
+            else:
+                if correct_control.brake == 1.0:
+                    brake_offset = random.uniform(-0.5, -0.1)
+                else:
+                    brake_offset = random.choice([random.uniform(-0.5, -0.1), random.uniform(0.1, 0.5)])
+                brake_offset = random.choice([random.uniform(-0.5, -0.1), random.uniform(0.1, 0.5)])
+                incorrect_control.brake += brake_offset
+                incorrect_control.brake = np.clip(incorrect_control.brake, 0, 1.0)
+        
+        elif error_type == 'swap_throttle_brake':
             incorrect_control.throttle, incorrect_control.brake = incorrect_control.brake, incorrect_control.throttle
 
         return correct_control, incorrect_control
