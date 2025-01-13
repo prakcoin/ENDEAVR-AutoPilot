@@ -31,7 +31,10 @@ def collision_callback(data):
 obstacle_detected = False
 def obstacle_callback(data):
     global obstacle_detected
-    obstacle_detected = True
+    if data:
+        obstacle_detected = True
+    else:
+        obstacle_detected = False
 
 total_num_vehicle_collisions = 0
 total_num_walker_collisions = 0
@@ -185,10 +188,10 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, vlm_cam, depth_cam, 
         light = np.array([traffic_light_to_int(light_status)])
 
         control = model_control(sensor_data, depth_map, hlc, speed_km_h_cnn, light, model, device)
-        if obstacle_detected:
+        if obstacle_detected and speed_km_h > 0.1:
             vlm_control = vlm_inference(openai_client, vlm_image, hlc, speed_km_h, control.steer, control.brake, control.throttle)
-            print(vlm_control)
             ego_vehicle.apply_control(vlm_control)
+            obstacle_detected = False
         else:
             ego_vehicle.apply_control(control)
         dist_tracker.update(ego_vehicle)
@@ -313,6 +316,9 @@ if __name__ == '__main__':
     
     logging.basicConfig(filename=f'evaluation_{args.model}_vlm.log', 
                         level=logging.INFO,
-                        format='%(message)s' ) 
+                        format='%(message)s' )
+    
+    logging.getLogger("openai").setLevel(logging.ERROR)
+    logging.getLogger("httpx").setLevel(logging.ERROR)
 
     main(args)
