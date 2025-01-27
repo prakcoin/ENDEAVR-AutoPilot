@@ -132,9 +132,9 @@ class VLMAgent:
             if error_type == 'steering_noise':
                 steer_offset = random.choice([random.uniform(-0.5, -0.1), random.uniform(0.1, 0.5)])
                 if steer_offset > 0:
-                    lang_error = "The model predicted excessive rightward steering, causing the ego vehicle to deviate from its intended path."
+                    ec = "plus_right_steer"
                 else:
-                    lang_error = "The model predicted excessive leftward steering, causing the ego vehicle to deviate from its intended path."
+                    ec = "plus_left_steer"
                 incorrect_control.steer += steer_offset
                 incorrect_control.steer = np.clip(incorrect_control.steer, -1.0, 1.0)
             
@@ -142,9 +142,9 @@ class VLMAgent:
                 if incorrect_control.throttle > 0.0:
                     throttle_offset = random.choice([random.uniform(-0.5, -0.1), random.uniform(0.1, 0.5)])
                     if throttle_offset > 0:
-                        lang_error = "The model predicted too much acceleration, which could result in overshooting the desired speed or trajectory."
+                        ec = "plus_throttle"
                     else:
-                        lang_error = "The model predicted insufficient acceleration, potentially leading to the vehicle falling behind its intended trajectory."
+                        ec = "minus_throttle"
                     
                     incorrect_control.throttle += throttle_offset
                     incorrect_control.throttle = np.clip(incorrect_control.throttle, 0, 1.0)
@@ -154,20 +154,21 @@ class VLMAgent:
                     else:
                         brake_offset = random.choice([random.uniform(-0.5, -0.1), random.uniform(0.1, 0.5)])
                     if brake_offset > 0:
+                        ec = "plus_brake"
                         lang_error = "The model predicted excessive braking, which could slow the ego vehicle more than necessary, possibly compromising the trajectory."
                     else:
-                        lang_error = "The model predicted insufficient braking, which could lead to the vehicle failing to slow down as needed for the intended path."
+                        ec = "minus_brake"
                     incorrect_control.brake += brake_offset
                     incorrect_control.brake = np.clip(incorrect_control.brake, 0, 1.0)
             
             elif error_type == 'swap_throttle_brake':
                 incorrect_control.throttle, incorrect_control.brake = incorrect_control.brake, incorrect_control.throttle
                 if incorrect_control.throttle == 0:
-                    lang_error = "The model mistakenly predicted acceleration when it should have predicted braking, leading the ego vehicle to continue moving when it should slow down."
+                    ec = "swap_throttle"
                 else:
-                    lang_error = "The model mistakenly predicted braking when it should have predicted acceleration, preventing the vehicle from moving forward as intended."
-
-        return correct_control, incorrect_control, lang_error
+                    ec = "swap_brake"
+                    
+        return correct_control, incorrect_control, ec
 
     def set_path(self, path):
         self.path = path

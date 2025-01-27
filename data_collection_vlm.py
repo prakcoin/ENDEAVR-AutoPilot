@@ -5,11 +5,12 @@ import numpy as np
 import carla
 from PIL import Image
 import json
+import cv2
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
                                 spawn_ego_vehicle, spawn_vehicles, create_route, to_rgb, 
                                 cleanup, update_spectator, read_routes, spawn_pedestrians,
                                 cleanup_pedestrians, get_traffic_light_status)
-from utils.sensors import start_vlm_camera, start_collision_sensor, start_semantic_segmentation_sensor
+from utils.sensors import start_vlm_camera, start_collision_sensor
 from utils.agents import VLMAgent
 
 has_collision = False
@@ -60,12 +61,19 @@ def generate_prompt(hlc, speed, steer, brake, throttle):
     )
     return prompt
 
-def generate_label(weather, steer, brake, throttle, light, waypoint, lang_error):
+def generate_label(weather, hlc, speed_km_h, correct_steer, correct_brake, correct_throttle, light, waypoint, ec, scene_description, incorrect_steer=None, incorrect_brake=None, incorrect_throttle=None):
     light_dict = {
         -1: "The ego vehicle is not at a traffic light.",
         carla.libcarla.TrafficLightState.Red: "The traffic light is red.",
         carla.libcarla.TrafficLightState.Green: "The traffic light is green.",
         carla.libcarla.TrafficLightState.Yellow: "The traffic light is yellow."
+    }
+
+    road_option_dict = {
+        "LaneFollow": "Follow the lane",
+        "Left": "Turn left at the junction",
+        "Right": "Turn right at the junction",
+        "Straight": "Go straight at the junction"
     }
 
     weather_conditions = {
@@ -86,7 +94,27 @@ def generate_label(weather, steer, brake, throttle, light, waypoint, lang_error)
         "HardRainNight": "It is heavily raining at night.",
         "DustStorm": "There is a dust storm."
     }
+
+    lang_hlc = road_option_dict[hlc]
     
+    explanation = ""
+    if ec == "plus_right_steer":
+        explanation = "The model predicted excessive rightward steering"
+    elif ec == "plus_left_steer":
+        explanation = "The model predicted excessive leftward steering"
+    elif ec == "plus_throttle":
+        explanation = "The model predicted excessive acceleration."
+    elif ec == "minus_throttle":
+        explanation = "The model predicted insufficient acceleration."
+    elif ec == "plus_brake":
+        explanation = "The model predicted excessive braking."
+    elif ec == "minus_brake":
+        explanation = "The model predicted insufficient braking."
+    elif ec == "swap_throttle":
+        explanation = "The model predicted braking instead of acceleration."
+    elif ec == "swap_brake":
+        explanation = "The model predicted acceleration instead of braking."
+
     lang_weather = weather_conditions[weather]
     lang_light = light_dict[light]
     at_junction = waypoint.is_junction
@@ -102,13 +130,133 @@ def generate_label(weather, steer, brake, throttle, light, waypoint, lang_error)
         )
 
     label = (
-        f"{lang_weather} {lang_light} {road_description} {lang_error}\n"
+        f"{lang_weather} {lang_light} {road_description} {explanation}\n"
         f"Therefore, the appropriate control signals are:\n\n"
-        f"- Steering Angle: {steer:.3f}\n"
-        f"- Brake: {brake:.3f}\n"
-        f"- Throttle: {throttle:.3f}"
+        f"- Steering Angle: {correct_steer:.3f}\n"
+        f"- Brake: {correct_brake:.3f}\n"
+        f"- Throttle: {correct_throttle:.3f}"
     )
     return label
+
+def build_projection_matrix(w, h, fov, is_behind_camera=False):
+    focal = w / (2.0 * np.tan(fov * np.pi / 360.0))
+    K = np.identity(3)
+
+    if is_behind_camera:
+        K[0, 0] = K[1, 1] = -focal
+    else:
+        K[0, 0] = K[1, 1] = focal
+
+    K[0, 2] = w / 2.0
+    K[1, 2] = h / 2.0
+    return K
+
+def point_in_canvas(pos, img_h, img_w):
+    return 0 <= pos[0] < img_w and 0 <= pos[1] < img_h
+
+def is_object_in_front_of_camera(ray, forward_vec, camera_location, npc, world, fov_angle=60):
+    ray_np = np.array([ray.x, ray.y, ray.z])
+    forward_vec_np = np.array([forward_vec.x, forward_vec.y, forward_vec.z])
+
+    magnitude_ray = np.linalg.norm(ray_np)
+    magnitude_forward_vec = np.linalg.norm(forward_vec_np)
+    if magnitude_ray == 0 or magnitude_forward_vec == 0:
+        return False
+
+    dot_product = np.dot(ray_np, forward_vec_np)
+    angle = np.arccos(np.clip(dot_product / (magnitude_ray * magnitude_forward_vec), -1.0, 1.0))
+    angle_deg = np.degrees(angle)
+
+    if angle_deg > fov_angle:
+        return False
+
+    start_location = camera_location
+    raycast_hits = []
+
+    for edge in npc.bounding_box.get_world_vertices(npc.get_transform()):
+        raycast_result = world.cast_ray(start_location, edge)
+        raycast_hits.append(raycast_result)
+
+    actor_labels = {carla.libcarla.CityObjectLabel.Car, carla.libcarla.CityObjectLabel.Bus, carla.libcarla.CityObjectLabel.Truck, 
+                    carla.libcarla.CityObjectLabel.Motorcycle, carla.libcarla.CityObjectLabel.Bicycle, carla.libcarla.CityObjectLabel.Train,
+                    carla.libcarla.CityObjectLabel.Pedestrians}
+
+    other_labels = {carla.libcarla.CityObjectLabel.NONE, carla.libcarla.CityObjectLabel.Roads, carla.libcarla.CityObjectLabel.Poles, 
+                    carla.libcarla.CityObjectLabel.TrafficLight, carla.libcarla.CityObjectLabel.TrafficSigns, carla.libcarla.CityObjectLabel.GuardRail,
+                    carla.libcarla.CityObjectLabel.Vegetation}
+
+    for hit_list in raycast_hits:
+        for hit in hit_list:
+            if hit.label is None or hit.label in other_labels:
+                continue
+
+            if hit.label in actor_labels:
+                return True
+            else:
+                return False
+
+    return True
+
+def get_scene_description_and_bounding_boxes(world, vehicle, camera, image, image_h, image_w, K, K_b, display_bb=True):
+    edges = [[0,1], [1,3], [3,2], [2,0], [0,4], [4,5], [5,1], [5,7], [7,6], [6,4], [6,2], [7,3]]
+    img = np.reshape(np.copy(image.raw_data), (image.height, image.width, 4))
+    world_2_camera = np.array(camera.get_transform().get_inverse_matrix())
+
+    actors = list(world.get_actors().filter("*vehicle*")) + list(world.get_actors().filter("*walker*"))
+
+    scene_description = []
+    for npc in actors:
+        if npc.id != vehicle.id:
+            bb = npc.bounding_box
+            dist = npc.get_transform().location.distance(vehicle.get_transform().location)
+
+            if dist < 50:
+                forward_vec = vehicle.get_transform().get_forward_vector()
+                ray = npc.get_transform().location - vehicle.get_transform().location
+
+                is_behind = forward_vec.dot(ray) < 0
+                projection_matrix = K_b if is_behind else K
+
+                verts = [v for v in bb.get_world_vertices(npc.get_transform())]
+                projected_verts = [get_image_point(v, projection_matrix, world_2_camera) for v in verts]
+
+                if is_object_in_front_of_camera(ray, forward_vec, camera.get_transform().location, npc, world):
+                    if any(point_in_canvas(v, image_h, image_w) for v in projected_verts):
+                        actor_type = "pedestrian" if "walker" in npc.type_id else "vehicle"
+                        scene_description.append({
+                            "type": actor_type,
+                            "id": npc.type_id,
+                            "distance": dist,
+                            "location": npc.get_transform().location
+                        })
+
+                        if display_bb:
+                            for edge in edges:
+                                p1 = get_image_point(verts[edge[0]], projection_matrix, world_2_camera)
+                                p2 = get_image_point(verts[edge[1]], projection_matrix, world_2_camera)
+                                if point_in_canvas(p1, image_h, image_w) and point_in_canvas(p2, image_h, image_w):
+                                    cv2.line(
+                                        img,
+                                        (int(p1[0]), int(p1[1])),
+                                        (int(p2[0]), int(p2[1])),
+                                        (255, 0, 0, 255),
+                                        1,
+                                    )
+
+    if display_bb:
+        cv2.imshow("Scene with Bounding Boxes", img)
+        cv2.waitKey(1)
+
+    return scene_description
+
+def get_image_point(loc, K, w2c):
+    point = np.array([loc.x, loc.y, loc.z, 1])
+    point_camera = np.dot(w2c, point)
+    point_camera = [point_camera[1], -point_camera[2], point_camera[0]]
+    point_img = np.dot(K, point_camera)
+    point_img[0] /= point_img[2]
+    point_img[1] /= point_img[2]
+    return point_img[0:2]
 
 def save_images(images_dir, images):
     for image_filename, rgb_data in images:
@@ -150,8 +298,8 @@ def run_episode(world, weather, ego_vehicle, agent, rgb_cam, end_point, collect_
 
         update_spectator(spectator, ego_vehicle)
         
-        correct_control, incorrect_control, lang_error = agent.run_step()
-        lang_error = "The predicted control signals are correct." if collect_correct else lang_error
+        correct_control, incorrect_control, ec = agent.run_step()
+        ec = "The predicted control signals are correct." if collect_correct else ec
         ego_vehicle.apply_control(correct_control)
 
         rgb_data = to_rgb(rgb_cam.get_sensor_data())
@@ -166,7 +314,18 @@ def run_episode(world, weather, ego_vehicle, agent, rgb_cam, end_point, collect_
         waypoint = map.get_waypoint(ego_location)
         selected_control = correct_control if collect_correct else incorrect_control
         finetune_prompt = generate_prompt(hlc, speed_km_h, selected_control.steer, selected_control.brake, selected_control.throttle)
-        label = generate_label(weather, correct_control.steer, correct_control.brake, correct_control.throttle, light, waypoint, lang_error)
+        scene_description = get_scene_description_and_bounding_boxes(
+            world=world,
+            vehicle=ego_vehicle,
+            camera=rgb_cam.get_sensor(),
+            image=rgb_cam.get_sensor_data(),
+            image_h=512,
+            image_w=1024,
+            K=build_projection_matrix(1024, 512, 110.0),
+            K_b=build_projection_matrix(1024, 512, 110.0, is_behind_camera=True)
+        )
+        print("Scene Description:", scene_description)
+        label = generate_label(weather, hlc, speed_km_h, correct_control.steer, correct_control.brake, correct_control.throttle, light, waypoint, ec, scene_description) if collect_correct else generate_label(weather, hlc, speed_km_h, correct_control.steer, correct_control.brake, correct_control.throttle, light, waypoint, ec, scene_description, incorrect_control.steer, incorrect_control.brake, incorrect_control.throttle)
 
         correct_str = "correct" if collect_correct else "incorrect"
         image_filename = f"{args.town}_episode_{episode + 1}_{correct_str}_frame_{frame:06d}.jpg"
@@ -200,7 +359,7 @@ def main(args):
     all_id, all_actors, vehicle_list = [], [], []
     restart = False
     episode = 0
-    collect_correct = True
+    collect_correct = False
     while episode < episode_count:
         print(f'Episode: {episode + 1}')
         if not restart:
