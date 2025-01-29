@@ -601,7 +601,7 @@ if __name__ == '__main__':
     parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')
     parser.add_argument('--pedestrians', type=int, default=40, help='Number of pedestrians present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
-    parser.add_argument('--image_path', type=str, default='/content/drive/My Drive/AV Research/DriveLM/Train Sets/v3/images/', help='Filepath for images')
+    parser.add_argument('--image_path', type=str, default='/vlm_data/images/', help='Filepath for images')
     args = parser.parse_args()
 
     main(args)
