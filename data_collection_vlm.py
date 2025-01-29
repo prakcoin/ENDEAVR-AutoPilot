@@ -6,6 +6,8 @@ import carla
 from PIL import Image
 import json
 import cv2
+from scipy.spatial import KDTree
+import webcolors
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
                                 spawn_ego_vehicle, spawn_vehicles, create_route, to_rgb, 
                                 cleanup, update_spectator, read_routes, spawn_pedestrians,
@@ -41,6 +43,18 @@ def end_episode(ego_vehicle, end_point, frame, args):
         done = True
     return done
 
+def convert_rgb_to_names(rgb_tuple):
+    css3_db = webcolors.CSS2_HEX_TO_NAMES
+    names = []
+    rgb_values = []
+    for color_hex, color_name in css3_db.items():
+        names.append(color_name)
+        rgb_values.append(webcolors.hex_to_rgb(color_hex))
+    
+    kdt_db = KDTree(rgb_values)
+    _, index = kdt_db.query(rgb_tuple)
+    return f'{names[index]}'
+
 def generate_prompt(hlc, speed, steer, brake, throttle):  
     road_option_dict = {
         "LaneFollow": "Follow the lane",
@@ -61,19 +75,113 @@ def generate_prompt(hlc, speed, steer, brake, throttle):
     )
     return prompt
 
-def generate_label(weather, hlc, speed_km_h, correct_steer, correct_brake, correct_throttle, light, waypoint, ec, scene_description, incorrect_steer=None, incorrect_brake=None, incorrect_throttle=None):
+def generate_scene_description(scene_description):
+    descriptions = []
+    vehicle_count, ped_count = 0, 0
+
+    for obj in scene_description:
+        if obj["type"] == "vehicle":
+            vehicle_count += 1
+        elif obj["type"] == "pedestrian":
+            ped_count += 1
+
+    descriptions.append(f"There are {vehicle_count} vehicles and {ped_count} pedestrians nearby.")
+
+    for obj in scene_description:
+        distance = obj["distance"]
+        if distance < 10:
+            proximity_str = "very close"
+        elif distance < 20:
+            proximity_str = "close"
+        elif distance < 35:
+            proximity_str = "at a moderate distance"
+        else:
+            proximity_str = "far away"
+
+        if obj["type"] == "vehicle":
+            if -2 <= obj['position'][1] <= 2:
+                rough_pos_str = 'directly in front of the ego vehicle'
+            elif obj['position'][1] > 2:
+                rough_pos_str = 'to the front right of the ego vehicle'
+            else:
+                rough_pos_str = 'to the front left of the ego vehicle'
+
+            if obj["speed"] < 0.2:
+                motion_status = "stopped"
+            elif obj["speed"] < 5:
+                motion_status = "moving slowly"
+            else:
+                motion_status = "moving"
+
+            steer = obj.get("steer", 0)
+            if steer < -0.1:
+                turning_status = "turning left"
+            elif steer < -0.03:
+                turning_status = "turning slightly left"
+            elif steer > 0.1:
+                turning_status = "turning right"
+            elif steer > 0.03:
+                turning_status = "turning slightly right"
+            else:
+                turning_status = "going straight"
+
+            orientation_relative_to_ego = obj.get('yaw', 0) * 180 / np.pi 
+            if -135 < orientation_relative_to_ego < -45:
+                orientation_str = 'pointing leftwards'
+            elif 45 < orientation_relative_to_ego < 135:
+                orientation_str = 'pointing rightwards'
+            elif 135 < orientation_relative_to_ego or orientation_relative_to_ego < -135:
+                orientation_str = 'pointing towards the ego vehicle'
+            else:
+                orientation_str = 'pointing in the same direction as the ego vehicle'
+
+            if 'firetruck' in obj['id']:
+                vehicle_type = 'firetruck'
+            elif 'police' in obj['id']:
+                vehicle_type = 'police car'
+            elif 'ambulance' in obj['id']:
+                vehicle_type = 'ambulance'
+            elif 'jeep' in obj['id']:
+                vehicle_type = 'jeep'
+            elif 'micro' in obj['id']:
+                vehicle_type = 'small car'
+            elif 'nissan.patrol' in obj['id']:
+                vehicle_type = 'SUV'
+            elif 'european_hgv' in obj['id']:
+                vehicle_type = 'HGV'
+            elif 'sprinter' in obj['id']:
+                vehicle_type = 'sprinter'
+            else:
+                vehicle_type = obj['base_type']
+
+            desc = f"A {obj['color'].lower()} {vehicle_type.lower()}" if obj['color'] else f"A {vehicle_type}"
+            desc += f" is {motion_status}, {turning_status}, {orientation_str}, located {rough_pos_str}, and is {proximity_str}."
+            descriptions.append(desc)
+
+        elif obj["type"] == "pedestrian":
+            if -2 < obj['position'][1] < 2:
+                rough_pos_str = 'directly in front of the ego vehicle'
+            elif obj['position'][1] > 2:
+                rough_pos_str = 'to the front right of the ego vehicle'
+            else:
+                rough_pos_str = 'to the front left of the ego vehicle'
+
+            if obj["speed"] < 0.2:
+                motion_status = "standing"
+            else:
+                motion_status = "walking"
+
+            desc = f"A pedestrian is {motion_status}, located {rough_pos_str}, and is {proximity_str}."
+            descriptions.append(desc)
+
+    return " ".join(descriptions)
+
+def generate_label(weather, correct_steer, correct_brake, correct_throttle, light, waypoint, ec, scene_description, collect_correct):
     light_dict = {
         -1: "The ego vehicle is not at a traffic light.",
         carla.libcarla.TrafficLightState.Red: "The traffic light is red.",
         carla.libcarla.TrafficLightState.Green: "The traffic light is green.",
         carla.libcarla.TrafficLightState.Yellow: "The traffic light is yellow."
-    }
-
-    road_option_dict = {
-        "LaneFollow": "Follow the lane",
-        "Left": "Turn left at the junction",
-        "Right": "Turn right at the junction",
-        "Straight": "Go straight at the junction"
     }
 
     weather_conditions = {
@@ -95,25 +203,29 @@ def generate_label(weather, hlc, speed_km_h, correct_steer, correct_brake, corre
         "DustStorm": "There is a dust storm."
     }
 
-    lang_hlc = road_option_dict[hlc]
+    lang_scene = generate_scene_description(scene_description)
     
-    explanation = ""
-    if ec == "plus_right_steer":
-        explanation = "The model predicted excessive rightward steering"
-    elif ec == "plus_left_steer":
-        explanation = "The model predicted excessive leftward steering"
-    elif ec == "plus_throttle":
-        explanation = "The model predicted excessive acceleration."
-    elif ec == "minus_throttle":
-        explanation = "The model predicted insufficient acceleration."
-    elif ec == "plus_brake":
-        explanation = "The model predicted excessive braking."
-    elif ec == "minus_brake":
-        explanation = "The model predicted insufficient braking."
-    elif ec == "swap_throttle":
-        explanation = "The model predicted braking instead of acceleration."
-    elif ec == "swap_brake":
-        explanation = "The model predicted acceleration instead of braking."
+    explanation = "Based on the current scene, "
+    if not collect_correct:
+        
+        if ec == "plus_right_steer":
+            explanation += "the model predicted excessive rightward steering."
+        elif ec == "plus_left_steer":
+            explanation += "the model predicted excessive leftward steering."
+        elif ec == "plus_throttle":
+            explanation += "the model predicted excessive acceleration."
+        elif ec == "minus_throttle":
+            explanation += "the model predicted insufficient acceleration."
+        elif ec == "plus_brake":
+            explanation += "the model predicted excessive braking."
+        elif ec == "minus_brake":
+            explanation += "the model predicted insufficient braking."
+        elif ec == "swap_throttle":
+            explanation += "the model predicted braking instead of acceleration."
+        elif ec == "swap_brake":
+            explanation += "the model predicted acceleration instead of braking."
+    else:
+        explanation += "the predicted control signals are correct."
 
     lang_weather = weather_conditions[weather]
     lang_light = light_dict[light]
@@ -126,13 +238,13 @@ def generate_label(weather, hlc, speed_km_h, correct_steer, correct_brake, corre
         left_lane_marking = waypoint.left_lane_marking.type.name.lower()
         
         road_description = (
-            f"The ego vehicle isn't at a junction. The road is a {lane_type} road with a {left_lane_marking} left lane marking."
+            f"The ego vehicle isn't at a junction, and the road is a {lane_type} road with a {left_lane_marking} left lane marking."
         )
 
     label = (
-        f"{lang_weather} {lang_light} {road_description} {explanation}\n"
+        f"{lang_weather} {lang_light} {road_description} {lang_scene} {explanation} "
         f"Therefore, the appropriate control signals are:\n\n"
-        f"- Steering Angle: {correct_steer:.3f}\n"
+        f"- Steer: {correct_steer:.3f}\n"
         f"- Brake: {correct_brake:.3f}\n"
         f"- Throttle: {correct_throttle:.3f}"
     )
@@ -197,7 +309,20 @@ def is_object_in_front_of_camera(ray, forward_vec, camera_location, npc, world, 
 
     return True
 
-def get_scene_description_and_bounding_boxes(world, vehicle, camera, image, image_h, image_w, K, K_b, display_bb=True):
+def get_relative_transform(ego_matrix, vehicle_matrix):
+  relative_pos = vehicle_matrix[:3, 3] - ego_matrix[:3, 3]
+  rot = ego_matrix[:3, :3].T
+  relative_pos = rot @ relative_pos
+
+  return relative_pos
+
+def normalize_angle(x):
+  x = x % (2 * np.pi)
+  if x > np.pi:
+    x -= 2 * np.pi
+  return x
+
+def get_scene_description_and_bounding_boxes(world, vehicle, camera, image, image_h, image_w, K, K_b, display_bb=False):
     edges = [[0,1], [1,3], [3,2], [2,0], [0,4], [4,5], [5,1], [5,7], [7,6], [6,4], [6,2], [7,3]]
     img = np.reshape(np.copy(image.raw_data), (image.height, image.width, 4))
     world_2_camera = np.array(camera.get_transform().get_inverse_matrix())
@@ -223,12 +348,76 @@ def get_scene_description_and_bounding_boxes(world, vehicle, camera, image, imag
                 if is_object_in_front_of_camera(ray, forward_vec, camera.get_transform().location, npc, world):
                     if any(point_in_canvas(v, image_h, image_w) for v in projected_verts):
                         actor_type = "pedestrian" if "walker" in npc.type_id else "vehicle"
-                        scene_description.append({
-                            "type": actor_type,
-                            "id": npc.type_id,
-                            "distance": dist,
-                            "location": npc.get_transform().location
-                        })
+                        map = world.get_map()
+                        ego_wp = map.get_waypoint(vehicle.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
+                        ego_matrix = np.array(vehicle.get_transform().get_matrix())
+                        ego_rotation = vehicle.get_transform().rotation
+                        ego_yaw = np.deg2rad(ego_rotation.yaw)
+                        ego_lane_direction = ego_wp.lane_id / abs(ego_wp.lane_id)
+
+
+                        if (actor_type == "vehicle"):
+                            base_type = npc.attributes['base_type']
+                            vehicle_wp = map.get_waypoint(npc.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
+                            vehicle_control = npc.get_control()
+                            vehicle_rotation = npc.get_transform().rotation
+                            vehicle_matrix = np.array(npc.get_transform().get_matrix())
+                            relative_pos = get_relative_transform(ego_matrix, vehicle_matrix)
+                            same_road_as_ego = False
+                            same_direction_as_ego = False
+                            direction = vehicle_wp.lane_id / abs(vehicle_wp.lane_id)
+                            speed = (3.6 * np.sqrt(npc.get_velocity().x**2 + npc.get_velocity().y**2 + npc.get_velocity().z**2))
+                            yaw = np.deg2rad(vehicle_rotation.yaw)
+                            relative_yaw = normalize_angle(yaw - ego_yaw)
+                            if direction == ego_lane_direction:
+                                same_direction_as_ego = True
+                            if vehicle_wp.road_id == ego_wp.road_id:
+                                same_road_as_ego = True
+                            try:
+                                rgb = tuple(map(int, npc.attributes['color'].split(',')))
+                                color_name = convert_rgb_to_names(rgb)
+                            except:
+                                rgb = None
+                                color_name = None
+
+                            scene_description.append({
+                                "type": actor_type,
+                                "base_type": base_type,
+                                "same_road": same_road_as_ego,
+                                "same_dir": same_direction_as_ego,
+                                'throttle': vehicle_control.throttle,
+                                'brake': vehicle_control.brake,
+                                'steer': vehicle_control.steer,
+                                "position": [relative_pos[0], relative_pos[1], relative_pos[2]],
+                                "is_in_junction": vehicle_wp.is_junction,
+                                "junction_id": vehicle_wp.junction_id,
+                                'yaw': relative_yaw,
+                                "speed": speed,
+                                "color": color_name,
+                                "id": npc.type_id,
+                                "distance": dist
+                            })
+                        else:
+                            ped_wp = map.get_waypoint(npc.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
+                            ped_matrix = np.array(npc.get_transform().get_matrix())
+                            relative_pos = get_relative_transform(ego_matrix, ped_matrix)
+                            same_road_as_ego = False
+                            same_direction_as_ego = False
+                            direction = ped_wp.lane_id / abs(ped_wp.lane_id)
+                            speed = (3.6 * np.sqrt(npc.get_velocity().x**2 + npc.get_velocity().y**2 + npc.get_velocity().z**2))
+                            if direction == ego_lane_direction:
+                                same_direction_as_ego = True
+                            if ped_wp.road_id == ego_wp.road_id:
+                                same_road_as_ego = True
+                            scene_description.append({
+                                "type": actor_type,
+                                "id": npc.type_id,
+                                "position": [relative_pos[0], relative_pos[1], relative_pos[2]],
+                                "distance": dist,
+                                "same_road": same_road_as_ego,
+                                "same_dir": same_direction_as_ego,
+                                "speed": speed
+                            })
 
                         if display_bb:
                             for edge in edges:
@@ -299,7 +488,6 @@ def run_episode(world, weather, ego_vehicle, agent, rgb_cam, end_point, collect_
         update_spectator(spectator, ego_vehicle)
         
         correct_control, incorrect_control, ec = agent.run_step()
-        ec = "The predicted control signals are correct." if collect_correct else ec
         ego_vehicle.apply_control(correct_control)
 
         rgb_data = to_rgb(rgb_cam.get_sensor_data())
@@ -324,8 +512,7 @@ def run_episode(world, weather, ego_vehicle, agent, rgb_cam, end_point, collect_
             K=build_projection_matrix(1024, 512, 110.0),
             K_b=build_projection_matrix(1024, 512, 110.0, is_behind_camera=True)
         )
-        print("Scene Description:", scene_description)
-        label = generate_label(weather, hlc, speed_km_h, correct_control.steer, correct_control.brake, correct_control.throttle, light, waypoint, ec, scene_description) if collect_correct else generate_label(weather, hlc, speed_km_h, correct_control.steer, correct_control.brake, correct_control.throttle, light, waypoint, ec, scene_description, incorrect_control.steer, incorrect_control.brake, incorrect_control.throttle)
+        label = generate_label(weather, correct_control.steer, correct_control.brake, correct_control.throttle, light, waypoint, ec, scene_description, collect_correct)
 
         correct_str = "correct" if collect_correct else "incorrect"
         image_filename = f"{args.town}_episode_{episode + 1}_{correct_str}_frame_{frame:06d}.jpg"
@@ -359,7 +546,7 @@ def main(args):
     all_id, all_actors, vehicle_list = [], [], []
     restart = False
     episode = 0
-    collect_correct = False
+    collect_correct = True
     while episode < episode_count:
         print(f'Episode: {episode + 1}')
         if not restart:
@@ -414,7 +601,7 @@ if __name__ == '__main__':
     parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')
     parser.add_argument('--pedestrians', type=int, default=40, help='Number of pedestrians present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
-    parser.add_argument('--image_path', type=str, default='vlm_data/images/', help='Filepath for images')
+    parser.add_argument('--image_path', type=str, default='/content/drive/My Drive/AV Research/DriveLM/Train Sets/v3/images/', help='Filepath for images')
     args = parser.parse_args()
 
     main(args)
