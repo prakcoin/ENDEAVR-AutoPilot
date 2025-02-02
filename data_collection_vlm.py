@@ -75,7 +75,7 @@ def generate_prompt(hlc, speed, steer, brake, throttle):
     )
     return prompt
 
-def generate_scene_description(scene_description):
+def generate_scene_description(scene_description, ego_speed):
     descriptions = []
     vehicle_count, ped_count = 0, 0
 
@@ -85,18 +85,27 @@ def generate_scene_description(scene_description):
         elif obj["type"] == "pedestrian":
             ped_count += 1
 
-    descriptions.append(f"There are {vehicle_count} vehicles and {ped_count} pedestrians nearby.")
+    vehicle_count_str = f"are {vehicle_count} vehicles"
+    if vehicle_count == 1:
+        vehicle_count_str = f"is {vehicle_count} vehicle"
+    
+    pedestrian_count_str = f"{ped_count} pedestrians"
+    if ped_count == 1:
+        pedestrian_count_str = f"{ped_count} pedestrian"
+    
+
+    descriptions.append(f"There {vehicle_count_str} and {pedestrian_count_str} nearby.")
 
     for obj in scene_description:
         distance = obj["distance"]
         if distance < 10:
-            proximity_str = "very close"
+            proximity_str = "very close to the ego vehicle"
         elif distance < 20:
-            proximity_str = "close"
+            proximity_str = "close to the ego vehicle"
         elif distance < 35:
-            proximity_str = "at a moderate distance"
+            proximity_str = "at a moderate distance from the ego vehicle"
         else:
-            proximity_str = "far away"
+            proximity_str = "far away from the ego vehicle"
 
         if obj["type"] == "vehicle":
             if -2 <= obj['position'][1] <= 2:
@@ -153,9 +162,16 @@ def generate_scene_description(scene_description):
                 vehicle_type = 'sprinter'
             else:
                 vehicle_type = obj['base_type']
+            
+            if ego_speed > 0.2 and motion_status == "stopped" and rough_pos_str == "directly in front of the ego vehicle" and distance < 20:
+                caution_str = f" The {vehicle_type.lower()} ahead is stopped, potentially causing a collision if evasive action isn't taken."
+            if ego_speed > obj['speed'] and motion_status == "moving slowly" and rough_pos_str == "directly in front of the ego vehicle" and distance < 20:
+                caution_str = f" The {vehicle_type.lower()} ahead is slowing down, potentially causing a collision if evasive action isn't taken."
+            else:
+                caution_str = ""
 
             desc = f"A {obj['color'].lower()} {vehicle_type.lower()}" if obj['color'] else f"A {vehicle_type}"
-            desc += f" is {motion_status}, {turning_status}, {orientation_str}, located {rough_pos_str}, and is {proximity_str}."
+            desc += f" is {motion_status}, {turning_status}, {orientation_str}, located {rough_pos_str}, and is {proximity_str}.{caution_str}"
             descriptions.append(desc)
 
         elif obj["type"] == "pedestrian":
@@ -171,12 +187,17 @@ def generate_scene_description(scene_description):
             else:
                 motion_status = "walking"
 
-            desc = f"A pedestrian is {motion_status}, located {rough_pos_str}, and is {proximity_str}."
+            if ego_speed > 0.2 and motion_status == "walking" and rough_pos_str == "directly in front of the ego vehicle" and distance < 20:
+                caution_str = " The pedestrian is crossing in front of the ego vehicle, potentially causing a collision if evasive action isn't taken."
+            else:
+                caution_str = ""
+
+            desc = f"A pedestrian is {motion_status}, located {rough_pos_str}, and is {proximity_str}.{caution_str}"
             descriptions.append(desc)
 
     return " ".join(descriptions)
 
-def generate_label(weather, correct_steer, correct_brake, correct_throttle, light, waypoint, ec, scene_description, collect_correct):
+def generate_label(weather, speed, correct_steer, correct_brake, correct_throttle, light, waypoint, ec, scene_description, collect_correct):
     light_dict = {
         -1: "The ego vehicle is not at a traffic light.",
         carla.libcarla.TrafficLightState.Red: "The traffic light is red.",
@@ -203,27 +224,26 @@ def generate_label(weather, correct_steer, correct_brake, correct_throttle, ligh
         "DustStorm": "There is a dust storm."
     }
 
-    lang_scene = generate_scene_description(scene_description)
+    lang_scene = generate_scene_description(scene_description, speed)
     
     explanation = "Based on the current scene, "
     if not collect_correct:
-        
         if ec == "plus_right_steer":
-            explanation += "the model predicted excessive rightward steering."
+            explanation += "the model predicted excessive rightward steering, which could cause the vehicle to drift out of its lane or overturn."
         elif ec == "plus_left_steer":
-            explanation += "the model predicted excessive leftward steering."
+            explanation += "the model predicted excessive leftward steering, which could cause the vehicle to drift out of its lane or overturn."
         elif ec == "plus_throttle":
-            explanation += "the model predicted excessive acceleration."
+            explanation += "the model predicted excessive acceleration, potentially making it difficult to stop in time for obstacles ahead."
         elif ec == "minus_throttle":
-            explanation += "the model predicted insufficient acceleration."
+            explanation += "the model predicted insufficient acceleration, which might slow down traffic."
         elif ec == "plus_brake":
-            explanation += "the model predicted excessive braking."
+            explanation += "the model predicted excessive braking, which could disrupt the vehicle's normal movement and affect traffic flow."
         elif ec == "minus_brake":
-            explanation += "the model predicted insufficient braking."
+            explanation += "the model predicted insufficient braking, which could increase the risk of a collision."
         elif ec == "swap_throttle":
-            explanation += "the model predicted braking instead of acceleration."
+            explanation += "the model predicted braking instead of acceleration, which could disrupt the vehicle's normal movement and affect traffic flow."
         elif ec == "swap_brake":
-            explanation += "the model predicted acceleration instead of braking."
+            explanation += "the model predicted acceleration instead of braking, which could increase the risk of a collision."
     else:
         explanation += "the predicted control signals are correct."
 
@@ -232,7 +252,10 @@ def generate_label(weather, correct_steer, correct_brake, correct_throttle, ligh
     at_junction = waypoint.is_junction
     
     if at_junction:
-        road_description = "The ego vehicle is at a junction."
+        if scene_description:
+            road_description = "The ego vehicle is at a junction and should be wary of any oncoming vehicles."
+        else:
+            road_description = "The ego vehicle is at a junction."
     else:
         lane_type = waypoint.lane_type.name.lower()
         left_lane_marking = waypoint.left_lane_marking.type.name.lower()
@@ -250,6 +273,19 @@ def generate_label(weather, correct_steer, correct_brake, correct_throttle, ligh
     )
     return label
 
+def get_relative_transform(ego_matrix, vehicle_matrix):
+    relative_pos = vehicle_matrix[:3, 3] - ego_matrix[:3, 3]
+    rot = ego_matrix[:3, :3].T
+    relative_pos = rot @ relative_pos
+
+    return relative_pos
+
+def normalize_angle(x):
+    x = x % (2 * np.pi)
+    if x > np.pi:
+        x -= 2 * np.pi
+    return x
+
 def build_projection_matrix(w, h, fov, is_behind_camera=False):
     focal = w / (2.0 * np.tan(fov * np.pi / 360.0))
     K = np.identity(3)
@@ -266,7 +302,7 @@ def build_projection_matrix(w, h, fov, is_behind_camera=False):
 def point_in_canvas(pos, img_h, img_w):
     return 0 <= pos[0] < img_w and 0 <= pos[1] < img_h
 
-def is_object_in_front_of_camera(ray, forward_vec, camera_location, npc, world, fov_angle=60):
+def is_object_in_front_of_camera(ray, forward_vec, camera_location, npc, world, fov_angle=110):
     ray_np = np.array([ray.x, ray.y, ray.z])
     forward_vec_np = np.array([forward_vec.x, forward_vec.y, forward_vec.z])
 
@@ -309,19 +345,6 @@ def is_object_in_front_of_camera(ray, forward_vec, camera_location, npc, world, 
 
     return True
 
-def get_relative_transform(ego_matrix, vehicle_matrix):
-  relative_pos = vehicle_matrix[:3, 3] - ego_matrix[:3, 3]
-  rot = ego_matrix[:3, :3].T
-  relative_pos = rot @ relative_pos
-
-  return relative_pos
-
-def normalize_angle(x):
-  x = x % (2 * np.pi)
-  if x > np.pi:
-    x -= 2 * np.pi
-  return x
-
 def get_scene_description_and_bounding_boxes(world, vehicle, camera, image, image_h, image_w, K, K_b, display_bb=False):
     edges = [[0,1], [1,3], [3,2], [2,0], [0,4], [4,5], [5,1], [5,7], [7,6], [6,4], [6,2], [7,3]]
     img = np.reshape(np.copy(image.raw_data), (image.height, image.width, 4))
@@ -348,8 +371,8 @@ def get_scene_description_and_bounding_boxes(world, vehicle, camera, image, imag
                 if is_object_in_front_of_camera(ray, forward_vec, camera.get_transform().location, npc, world):
                     if any(point_in_canvas(v, image_h, image_w) for v in projected_verts):
                         actor_type = "pedestrian" if "walker" in npc.type_id else "vehicle"
-                        map = world.get_map()
-                        ego_wp = map.get_waypoint(vehicle.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
+                        world_map = world.get_map()
+                        ego_wp = world_map.get_waypoint(vehicle.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
                         ego_matrix = np.array(vehicle.get_transform().get_matrix())
                         ego_rotation = vehicle.get_transform().rotation
                         ego_yaw = np.deg2rad(ego_rotation.yaw)
@@ -358,7 +381,7 @@ def get_scene_description_and_bounding_boxes(world, vehicle, camera, image, imag
 
                         if (actor_type == "vehicle"):
                             base_type = npc.attributes['base_type']
-                            vehicle_wp = map.get_waypoint(npc.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
+                            vehicle_wp = world_map.get_waypoint(npc.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
                             vehicle_control = npc.get_control()
                             vehicle_rotation = npc.get_transform().rotation
                             vehicle_matrix = np.array(npc.get_transform().get_matrix())
@@ -398,7 +421,7 @@ def get_scene_description_and_bounding_boxes(world, vehicle, camera, image, imag
                                 "distance": dist
                             })
                         else:
-                            ped_wp = map.get_waypoint(npc.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
+                            ped_wp = world_map.get_waypoint(npc.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
                             ped_matrix = np.array(npc.get_transform().get_matrix())
                             relative_pos = get_relative_transform(ego_matrix, ped_matrix)
                             same_road_as_ego = False
@@ -512,7 +535,7 @@ def run_episode(world, weather, ego_vehicle, agent, rgb_cam, end_point, collect_
             K=build_projection_matrix(1024, 512, 110.0),
             K_b=build_projection_matrix(1024, 512, 110.0, is_behind_camera=True)
         )
-        label = generate_label(weather, correct_control.steer, correct_control.brake, correct_control.throttle, light, waypoint, ec, scene_description, collect_correct)
+        label = generate_label(weather, speed_km_h, correct_control.steer, correct_control.brake, correct_control.throttle, light, waypoint, ec, scene_description, collect_correct)
 
         correct_str = "correct" if collect_correct else "incorrect"
         image_filename = f"{args.town}_episode_{episode + 1}_{correct_str}_frame_{frame:06d}.jpg"
