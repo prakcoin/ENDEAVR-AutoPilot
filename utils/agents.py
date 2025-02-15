@@ -155,7 +155,6 @@ class VLMAgent:
                         brake_offset = random.choice([random.uniform(-0.5, -0.1), random.uniform(0.1, 0.5)])
                     if brake_offset > 0:
                         ec = "plus_brake"
-                        lang_error = "The model predicted excessive braking, which could slow the ego vehicle more than necessary, possibly compromising the trajectory."
                     else:
                         ec = "minus_brake"
                     incorrect_control.brake += brake_offset

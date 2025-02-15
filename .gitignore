@@ -2,9 +2,11 @@ __pycache__/
 venv/
 data/
 images/
+vlm_evaluation_results/
 *.jsonl
 *.h5
 *.log
 *.zip
 *.env
 *.json
+*.jpg

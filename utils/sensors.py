@@ -1,5 +1,4 @@
 import carla
-import cv2
 import numpy as np
 
 class RGBCamera:
@@ -51,6 +50,33 @@ class DepthCamera:
 
     def get_sensor(self):
         return self._sensor
+    
+class LiDARSensor:
+    def __init__(self, world, vehicle):
+        bp = world.get_blueprint_library().find('sensor.lidar.ray_cast')
+        transform = carla.Transform(
+            carla.Location(x=0, y=0, z=2.5),
+            carla.Rotation(pitch=0, yaw=-90.0, roll=0)
+        )
+        
+        bp.set_attribute('rotation_frequency', '10')
+        bp.set_attribute('points_per_second', '600000')
+        bp.set_attribute('range', '50')
+            
+        self._sensor = world.spawn_actor(bp, transform, attach_to=vehicle)
+        self._data = None
+        self._sensor.listen(lambda data: self._callback(data))
+
+    def _callback(self, data):
+        data = np.frombuffer(data.raw_data, dtype=np.float32).reshape(-1, 4)
+        data = data[:, :3]
+        self._data = data
+
+    def get_sensor_data(self):
+        return self._data
+
+    def get_sensor(self):
+        return self._sensor
 
 def start_camera(world, vehicle):
     rgb_cam_main = RGBCamera(world, vehicle, size_x='320', size_y='240', fov='90', x_pos=1.5, y_pos=0, z_pos=2.4)
@@ -73,9 +99,6 @@ def start_lane_invasion_sensor(world, vehicle):
     sensor = world.spawn_actor(bp, transform, attach_to=vehicle)
     return sensor
 
-def start_obstacle_detector(world, vehicle):
-    bp = world.get_blueprint_library().find('sensor.other.obstacle')
-    bp.set_attribute('distance', '2.5')
-    transform = carla.Transform(carla.Location(x=2.5, z=0.7))
-    sensor = world.spawn_actor(bp, transform, attach_to=vehicle)
+def start_lidar_sensor(world, vehicle):
+    sensor = LiDARSensor(world, vehicle)
     return sensor

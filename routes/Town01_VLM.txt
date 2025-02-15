@@ -1,0 +1,6 @@
+72 85 431 Left Right
+95 62 383 Left Right
+102 217 292 Straight Left
+209 250 257 Straight Left
+130 32 381 Straight
+114 190 0 Left Right
