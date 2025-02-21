@@ -77,18 +77,17 @@ def generate_prompt(hlc, speed, steer, brake, throttle):
 
 def generate_scene_description(scene_description, ego_speed):
     descriptions = []
-    vehicle_count, ped_count = 0, 0
 
     for obj in scene_description:
         distance = obj["distance"]
         if distance < 10:
-            proximity_str = "very close to the ego vehicle"
+            proximity_str = "very close"
         elif distance < 20:
-            proximity_str = "close to the ego vehicle"
+            proximity_str = "close"
         elif distance < 35:
-            proximity_str = "at a moderate distance from the ego vehicle"
+            proximity_str = "at a moderate distance away"
         else:
-            proximity_str = "far away from the ego vehicle"
+            proximity_str = "far away"
 
 
         if obj["type"] == "vehicle":
@@ -103,11 +102,11 @@ def generate_scene_description(scene_description, ego_speed):
                 continue
 
             if -2 <= obj['position'][1] <= 2:
-                rough_pos_str = 'directly in front of the ego vehicle'
+                rough_pos_str = 'directly in front'
             elif obj['position'][1] > 2:
-                rough_pos_str = 'to the front right of the ego vehicle'
+                rough_pos_str = 'to the front right'
             else:
-                rough_pos_str = 'to the front left of the ego vehicle'
+                rough_pos_str = 'to the front left'
 
             if obj["speed"] < 0.2:
                 motion_status = "stopped"
@@ -157,16 +156,15 @@ def generate_scene_description(scene_description, ego_speed):
             else:
                 vehicle_type = obj['base_type']
             
-            if ego_speed > 0.2 and motion_status == "stopped" and rough_pos_str == "directly in front of the ego vehicle" and distance < 20:
-                caution_str = f" The {vehicle_type.lower()} ahead is stopped, potentially causing a collision if evasive action isn't taken."
-            if ego_speed > obj['speed'] and motion_status == "moving slowly" and rough_pos_str == "directly in front of the ego vehicle" and distance < 20:
-                caution_str = f" The {vehicle_type.lower()} ahead is slowing down, potentially causing a collision if evasive action isn't taken."
+            if ego_speed > 0.2 and motion_status == "stopped" and rough_pos_str == "directly in front" and distance < 20:
+                caution_str = f" The {vehicle_type.lower()} ahead is stopped, potentially causing a collision."
+            if ego_speed > obj['speed'] and motion_status == "moving slowly" and rough_pos_str == "directly in front" and distance < 20:
+                caution_str = f" The {vehicle_type.lower()} ahead is slowing down, potentially causing a collision."
             else:
                 caution_str = ""
 
             desc = f"A {obj['color'].lower()} {vehicle_type.lower()}" if obj['color'] else f"A {vehicle_type}"
             desc += f" is {motion_status}, {turning_status}, {orientation_str}, located {rough_pos_str}, and is {proximity_str}.{caution_str}"
-            vehicle_count += 1
             descriptions.append(desc)
 
         elif obj["type"] == "pedestrian":
@@ -178,35 +176,24 @@ def generate_scene_description(scene_description, ego_speed):
                 continue
 
             if -2 < obj['position'][1] < 2:
-                rough_pos_str = 'directly in front of the ego vehicle'
+                rough_pos_str = 'directly in front'
             elif obj['position'][1] > 2:
-                rough_pos_str = 'to the front right of the ego vehicle'
+                rough_pos_str = 'to the front right'
             else:
-                rough_pos_str = 'to the front left of the ego vehicle'
+                rough_pos_str = 'to the front left'
 
             if obj["speed"] < 0.2:
                 motion_status = "standing"
             else:
                 motion_status = "walking"
 
-            if ego_speed > 0.2 and motion_status == "walking" and rough_pos_str == "directly in front of the ego vehicle" and distance < 20:
-                caution_str = " The pedestrian is crossing in front of the ego vehicle, potentially causing a collision if evasive action isn't taken."
+            if ego_speed > 0.2 and motion_status == "walking" and rough_pos_str == "directly in front" and distance < 20:
+                caution_str = " The pedestrian is crossing in front of the ego vehicle, potentially causing a collision."
             else:
                 caution_str = ""
 
             desc = f"A pedestrian is {motion_status}, located {rough_pos_str}, and is {proximity_str}.{caution_str}"
-            ped_count += 1
             descriptions.append(desc)
-
-    vehicle_count_str = f"are {vehicle_count} vehicles"
-    if vehicle_count == 1:
-        vehicle_count_str = f"is {vehicle_count} vehicle"
-    
-    pedestrian_count_str = f"{ped_count} pedestrians"
-    if ped_count == 1:
-        pedestrian_count_str = f"{ped_count} pedestrian"
-    
-    descriptions.insert(0, f"There {vehicle_count_str} and {pedestrian_count_str} nearby.")
 
     return " ".join(descriptions)
 
@@ -257,102 +244,70 @@ def generate_explanation(correct_steer, correct_brake, correct_throttle,
             explanation += f"the ego vehicle should be {correct_signal_desc}, but "
 
             if ec == "plus_right_steer":
-                explanation += "the model predicted excessive rightward steering, which could cause the vehicle to drift out of its lane or overturn."
+                explanation += "the model predicted excessive rightward steering."
             elif ec == "plus_left_steer":
-                explanation += "the model predicted excessive leftward steering, which could cause the vehicle to drift out of its lane or overturn."
+                explanation += "the model predicted excessive leftward steering."
             elif ec == "plus_throttle":
-                explanation += "the model predicted excessive acceleration, potentially making it difficult to stop in time for obstacles ahead."
+                explanation += "the model predicted excessive acceleration."
             elif ec == "minus_throttle":
-                explanation += "the model predicted insufficient acceleration, which might slow down traffic."
+                explanation += "the model predicted insufficient acceleration."
             elif ec == "plus_brake":
-                explanation += "the model predicted excessive braking, which could disrupt the vehicle's normal movement and affect traffic flow."
+                explanation += "the model predicted excessive braking."
             elif ec == "minus_brake":
-                explanation += "the model predicted insufficient braking, which could increase the risk of a collision."
+                explanation += "the model predicted insufficient braking."
 
         else:
             explanation += f"the ego vehicle should be {correct_signal_desc}, but predicted control signals indicate that the ego vehicle will be {incorrect_signal_desc}. This means that "
 
             if ec == "plus_right_steer":
-                explanation += "the model predicted excessive rightward steering, which could cause the vehicle to drift out of its lane or overturn."
+                explanation += "the model predicted excessive rightward steering."
             elif ec == "plus_left_steer":
-                explanation += "the model predicted excessive leftward steering, which could cause the vehicle to drift out of its lane or overturn."
+                explanation += "the model predicted excessive leftward steering."
             elif ec == "plus_throttle":
-                explanation += "the model predicted excessive acceleration, potentially making it difficult to stop in time for obstacles ahead."
+                explanation += "the model predicted excessive acceleration."
             elif ec == "minus_throttle":
-                explanation += "the model predicted insufficient acceleration, which might slow down traffic."
+                explanation += "the model predicted insufficient acceleration."
             elif ec == "plus_brake":
-                explanation += "the model predicted excessive braking, which could disrupt the vehicle's normal movement and affect traffic flow."
+                explanation += "the model predicted excessive braking."
             elif ec == "minus_brake":
-                explanation += "the model predicted insufficient braking, which could increase the risk of a collision."
+                explanation += "the model predicted insufficient braking."
             elif ec == "swap_throttle":
-                explanation += "the model predicted braking instead of acceleration, which could disrupt the vehicle's normal movement and affect traffic flow."
+                explanation += "the model predicted braking instead of acceleration."
             elif ec == "swap_brake":
-                explanation += "the model predicted acceleration instead of braking, which could increase the risk of a collision."
+                explanation += "the model predicted acceleration instead of braking."
 
     return explanation
 
-def generate_label(world, ego_vehicle, weather, hlc, speed, correct_steer, correct_brake, correct_throttle, waypoint, ec, scene_description, collect_correct, incorrect_steer=None, incorrect_brake=None, incorrect_throttle=None):
-    weather_conditions = {
-        "ClearNoon": "The weather is clear and sunny at noon.",
-        "CloudyNoon": "The weather is cloudy at noon.",
-        "WetNoon": "The ground is wet, but there is no rain at noon.",
-        "WetCloudyNoon": "It is wet and cloudy at noon.",
-        "MidRainyNoon": "There is moderate rain at noon.",
-        "HardRainNoon": "It is heavily raining at noon.",
-        "SoftRainNoon": "It is softly raining at noon.",        
-        "ClearSunset": "The weather is clear at sunset.",
-        "CloudySunset": "The weather is cloudy at sunset.",
-        "WetSunset": "The ground is wet, but there is no rain at sunset.",
-        "WetCloudySunset": "It is wet and cloudy at sunset.",
-        "MidRainSunset": "There is moderate rain at sunset.",
-        "HardRainSunset": "It is heavily raining at sunset.",
-        "SoftRainSunset": "It is softly raining at sunset.",
-        "ClearNight": "The weather is clear at night.",
-        "CloudyNight": "The weather is cloudy at night.",
-        "WetNight": "The ground is wet, but there is no rain at night.",
-        "WetCloudyNight": "It is wet and cloudy at night.",
-        "SoftRainNight": "It is softly raining at night.",
-        "MidRainyNight": "There is moderate rain at night.",
-        "HardRainNight": "It is heavily raining at night.",
-        "DustStorm": "There is a dust storm."
-    }
+def generate_label(world, ego_vehicle, hlc, speed, correct_steer, correct_brake, correct_throttle, waypoint, ec, scene_description, collect_correct, incorrect_steer=None, incorrect_brake=None, incorrect_throttle=None):
     road_option_dict = {
-        "LaneFollow": "The high-level command is to follow the lane, ",
-        "Left": "The high-level command is to turn left at the junction, so the ego vehicle should steer to the left, gradually increasing the negative steer value to smoothly follow the turn.",
-        "Right": "The high-level command is to turn right at the junction, so the ego vehicle should steer to the right, gradually increasing the positive steer value to smoothly follow the turn.",
-        "Straight": "The high-level command is to go straight at the junction, so the ego vehicle should maintain a near-zero steer value to stay on a straight path."
+        "LaneFollow": "The high-level command is to follow the lane,",
+        "Left": "The high-level command is to turn left at the junction, so the ego vehicle should steer to the left.",
+        "Right": "The high-level command is to turn right at the junction, so the ego vehicle should steer to the right.",
+        "Straight": "The high-level command is to go straight at the junction, so the ego vehicle should maintain a near-zero steer value."
     }
     lang_hlc = road_option_dict[hlc]
     if hlc == "LaneFollow" and correct_steer < -0.03:
-        lang_hlc += " since the road curves left, the ego vehicle should steer to the left, gradually increasing the negative steer value to smoothly follow the turn."
+        lang_hlc += " since the road curves left, the ego vehicle should steer to the left."
     elif hlc == "LaneFollow" and correct_steer > 0.03:
-        lang_hlc += " since the road curves right, the ego vehicle should steer to the right, gradually increasing the positive steer value to smoothly follow the turn."
+        lang_hlc += " since the road curves right, the ego vehicle should steer to the right."
     else:
-        lang_hlc += " so the ego vehicle should maintain a near-zero steer value to stay on a straight path."
+        lang_hlc += " so the ego vehicle should maintain a near-zero steer value."
 
     lang_scene = generate_scene_description(scene_description, speed)
     
     explanation = generate_explanation(correct_steer, correct_brake, correct_throttle, ec, collect_correct, incorrect_steer, incorrect_brake, incorrect_throttle)
 
-    lang_weather = weather_conditions[weather]
     lang_light = light_affects_ego(world, ego_vehicle, speed)
     at_junction = waypoint.is_junction
     
+    road_description = "The ego vehicle is not at a junction."
     if at_junction:
         if scene_description:
             road_description = "The ego vehicle is at a junction and should be wary of any oncoming vehicles."
         else:
             road_description = "The ego vehicle is at a junction."
-    else:
-        lane_type = waypoint.lane_type.name.lower()
-        left_lane_marking = waypoint.left_lane_marking.type.name.lower()
-        
-        road_description = (
-            f"The ego vehicle isn't at a junction, and the road is a {lane_type} road with a {left_lane_marking} left lane marking."
-        )
-
     label = (
-        f"{lang_weather} {lang_light} {road_description} {lang_scene} {lang_hlc} {explanation} "
+        f"{lang_light} {road_description} {lang_scene} {lang_hlc} {explanation} "
         f"Therefore, the appropriate control signals are:\n\n"
         f"- Steer: {correct_steer:.3f}\n"
         f"- Brake: {correct_brake:.3f}\n"
@@ -765,12 +720,12 @@ def run_episode(world, weather, ego_vehicle, agent, rgb_cam, lidar_sensor, end_p
         finetune_prompt = generate_prompt(hlc, speed_km_h, selected_control.steer, selected_control.brake, selected_control.throttle)
         scene_description = get_scene_description(world=world, ego_vehicle=ego_vehicle, lidar=lidar_360)
         if collect_correct:
-            label = generate_label(world, ego_vehicle, weather, hlc, speed_km_h, correct_control.steer, correct_control.brake, correct_control.throttle, waypoint, ec, scene_description, collect_correct)
+            label = generate_label(world, ego_vehicle, hlc, speed_km_h, correct_control.steer, correct_control.brake, correct_control.throttle, waypoint, ec, scene_description, collect_correct)
         else:
-            label = generate_label(world, ego_vehicle, weather, hlc, speed_km_h, correct_control.steer, correct_control.brake, correct_control.throttle, waypoint, ec, scene_description, collect_correct, incorrect_control.steer, incorrect_control.brake, incorrect_control.throttle)
+            label = generate_label(world, ego_vehicle, hlc, speed_km_h, correct_control.steer, correct_control.brake, correct_control.throttle, waypoint, ec, scene_description, collect_correct, incorrect_control.steer, incorrect_control.brake, incorrect_control.throttle)
 
         correct_str = "correct" if collect_correct else "incorrect"
-        image_filename = f"{args.town}_episode_{episode + 1}_{correct_str}_frame_{frame:06d}.jpg"
+        image_filename = f"{args.town}_{weather}_episode_{episode + 1}_{correct_str}_frame_{frame:06d}.jpg"
         images.append((image_filename, rgb_data))
 
         data.append({
@@ -794,12 +749,18 @@ def main(args):
     traffic_manager = setup_traffic_manager(client)
 
     weather_conditions = [
-        "ClearNoon", "MidRainSunset",
-        "CloudyNight", "WetSunset",
-        "HardRainNoon", "SoftRainNight",
+        "ClearNoon",
+        "MidRainSunset",
+        "CloudyNight",
+        "WetSunset",
+        "HardRainNoon",
+        "SoftRainNight",
     ]
     route_configs = read_routes(args.route_file)
     episode_count = args.episodes
+
+    weather = "SoftRainNight"
+    world.set_weather(getattr(carla.WeatherParameters, weather))
 
     all_id, all_actors, vehicle_list = [], [], []
     restart = False
@@ -808,10 +769,10 @@ def main(args):
     while episode < episode_count:
         print(f'Episode: {episode + 1}')
         if not restart:
-            weather_choice = random.choice(weather_conditions)
-            weather_conditions.remove(weather_choice)
-            world.set_weather(getattr(carla.WeatherParameters, weather_choice))
-            world.tick()
+            # weather_choice = random.choice(weather_conditions)
+            # weather_conditions.remove(weather_choice)
+            # world.set_weather(getattr(carla.WeatherParameters, weather_choice))
+            # world.tick()
 
             num_tries = 0
             spawn_point_index, end_point_index, _, route = create_route(route_configs)
@@ -838,7 +799,7 @@ def main(args):
         sensors = [rgb_cam.get_sensor(), collision_sensor, lidar_sensor.get_sensor()]
         setup_vehicle_for_tm(traffic_manager, ego_vehicle)
 
-        run_episode(world, weather_choice, ego_vehicle, agent, rgb_cam, lidar_sensor, end_point, collect_correct, episode, args)
+        run_episode(world, weather, ego_vehicle, agent, rgb_cam, lidar_sensor, end_point, collect_correct, episode, args)
         if (has_collision):
             num_tries += 1
             episode -= 1
@@ -856,7 +817,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Data Collection (VLM) Script')
     parser.add_argument('--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('--max_frames', type=int, default=8000, help='Number of frames to collect per episode')
-    parser.add_argument('--episodes', type=int, default=6, help='Number of episodes to collect data for')
+    parser.add_argument('--episodes', type=int, default=18, help='Number of episodes to collect data for')
     parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')
     parser.add_argument('--pedestrians', type=int, default=40, help='Number of pedestrians present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_VLM.txt', help='Filepath for route file')

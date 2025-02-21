@@ -6,7 +6,6 @@ import io
 import base64
 import re
 import time
-from PIL import Image
 from model.AVModel import CNNTransformer
 import torch.nn.functional as F
 from torchvision.transforms import v2
@@ -174,16 +173,11 @@ def spawn_pedestrians(world, client, n_pedestrians, percentagePedestriansRunning
     walker_speed = []
     for spawn_point in spawn_points:
         walker_bp = random.choice(blueprintsWalkers)
-        # set as not invincible
-        #if walker_bp.has_attribute('is_invincible'):
         walker_bp.set_attribute('is_invincible', 'false')
-        # set the max speed
         if walker_bp.has_attribute('speed'):
             if (random.random() > percentagePedestriansRunning):
-                # walking
                 walker_speed.append(walker_bp.get_attribute('speed').recommended_values[1])
             else:
-                # running
                 walker_speed.append(walker_bp.get_attribute('speed').recommended_values[2])
         else:
             print("Walker has no speed")
@@ -198,7 +192,6 @@ def spawn_pedestrians(world, client, n_pedestrians, percentagePedestriansRunning
             walkers_list.append({"id": results[i].actor_id})
             walker_speed2.append(walker_speed[i])
     walker_speed = walker_speed2
-    # 3. we spawn the walker controller
     batch = []
     walker_controller_bp = world.get_blueprint_library().find('controller.ai.walker')
     for i in range(len(walkers_list)):
@@ -209,24 +202,17 @@ def spawn_pedestrians(world, client, n_pedestrians, percentagePedestriansRunning
             print(results[i].error)
         else:
             walkers_list[i]["con"] = results[i].actor_id
-    # 4. we put together the walkers and controllers id to get the objects from their id
     for i in range(len(walkers_list)):
         all_id.append(walkers_list[i]["con"])
         all_id.append(walkers_list[i]["id"])
     all_actors = world.get_actors(all_id)
 
-    # wait for a tick to ensure client receives the last transform of the walkers we have just created
     world.tick()
 
-    # 5. initialize each controller and set target to walk to (list is [controler, actor, controller, actor ...])
-    # set how many pedestrians can cross the road
     world.set_pedestrians_cross_factor(percentagePedestriansCrossing)
     for i in range(0, len(all_id), 2):
-        # start walker
         all_actors[i].start()
-        # set walk to random point
         all_actors[i].go_to_location(world.get_random_location_from_navigation())
-        # max speed
         all_actors[i].set_max_speed(float(walker_speed[int(i/2)]))
     
     return all_id, all_actors, walkers_list
@@ -337,43 +323,6 @@ def model_control(rgb, depth_map, hlc, speed, light, model, device):
     throttle, steer, brake = inference(model, rgb, depth_map, hlc, speed, light)
     return carla.VehicleControl(throttle=throttle, steer=steer, brake=brake)
 
-def enable_dropout(model):
-    for m in model.modules():
-        if isinstance(m, torch.nn.Dropout):
-            m.train()
-
-def mc_dropout_inference(model, input_tensor, main_image, wide_image, hlc, speed, light, num_samples=25):
-    enable_dropout(model)
-    predictions = []
-
-    for _ in range(num_samples):
-        with torch.no_grad():
-            output = model(input_tensor, hlc, speed, light)
-            predictions.append(output.detach().cpu().numpy())
-
-    predictions = np.stack(predictions, axis=0)
-    mean_predictions = np.mean(predictions, axis=0)
-    var_predictions = np.var(predictions, axis=0)
-
-    throttle_brake_mean, steer_mean = mean_predictions[0]
-    throttle_brake_var, steer_var = var_predictions[0]
-
-    throttle_mean, brake_mean = 0.0, 0.0
-    if throttle_brake_mean >= 0.5:
-        throttle_mean = (throttle_brake_mean - 0.5) / 0.5
-    else:
-        brake_mean = (0.5 - throttle_brake_mean) / 0.5
-    
-    steer_mean = (float(steer_mean) * 2.0) - 1.0
-
-    print(max(throttle_brake_var, steer_var))
-
-    if max(throttle_brake_var, steer_var) > 0.1:
-        print("Uncertainty is high, querying VLM for expert correction...")
-        pass
-
-    return throttle_mean, steer_mean, brake_mean
-
 def inference(model, rgb, depth_map, hlc, speed, light):
     with torch.no_grad():
         output = model(rgb, depth_map, hlc, speed, light)
@@ -423,11 +372,25 @@ def parse_chat_response(chat_response):
     pattern = r"Steer: ([+-]?\d*\.\d+|\d+).*?Brake: ([+-]?\d*\.\d+|\d+).*?Throttle: ([+-]?\d*\.\d+|\d+)"
     match = re.search(pattern, chat_content, re.DOTALL)
 
-    steer, brake, throttle = float(match.group(1)), float(match.group(2)), float(match.group(3))
+    if match:
+        steer = float(match.group(1))
+        brake = float(match.group(2))
+        throttle = float(match.group(3))
+    else:
+        steer, brake, throttle = 0.0, 1.0, 0.0
+
     return carla.VehicleControl(throttle=throttle, steer=steer, brake=brake)
+
+def reduce_image_size(image, scale=0.25):
+    """Reduce image size by a given scale."""
+    original_width, original_height = image.size
+    new_width = int(original_width * scale)
+    new_height = int(original_height * scale)
+    return image.resize((new_width, new_height))
 
 def vlm_inference(openai_client, image, hlc, speed, steer, brake, throttle):
     system_prompt = "You are a powerful vehicle control assistant with the primary responsibility of correcting or confirming vehicle control signals. You will analyze and validate control signals predicted by a convolutional neural network in the CARLA Simulator. You will use the following inputs:\n- Sensor data from a front RGB camera.\n- The current high-level command (one of: 'Follow the lane', 'Turn left at the junction', 'Turn right at the junction', or 'Go straight at the junction').\n- The ego vehicle's current speed in km/h.\n- Steer value (range: -1.0 to 1.0, where positive values indicate a right turn and negative values indicate a left turn).\n- Brake value (range: 0.0 to 1.0, where 0.0 is no braking and 1.0 is full braking, bringing the vehicle to a stop).\n- Throttle value (range: 0.0 to 1.0, where 0.0 is no acceleration and 1.0 is full acceleration).\nWhen validating or correcting control signals, consider the following factors:\n- Environmental Conditions: Weather, lighting, road type, lane markings, etc.\n- Traffic Context: Presence of nearby vehicles, pedestrians, traffic lights, or junctions.\n- High-Level Command: Ensure the control signals align with the intended maneuver (e.g., lane following, turning at a junction, going straight at a junction).\n- Current Speed: Adjust throttle and brake values to maintain safe speeds.\nProvide your response in a structured format, clearly stating whether the predicted signals are correct or incorrect. If incorrect, include the appropriate control signals for safe vehicle operation."
+    image = reduce_image_size(image)
     encoded_image = encode_image(image)
     prompt = generate_prompt(hlc, speed, steer, brake, throttle)
     start_time = time.time()
@@ -443,11 +406,12 @@ def vlm_inference(openai_client, image, hlc, speed, steer, brake, throttle):
                 {"type": "text", "text": prompt}
             ]}
         ],
-        max_tokens=2048
+        temperature=1.0
     )
     end_time = time.time()
     inference_time = end_time - start_time
     response = chat_response.choices[0].message.content
+    print(response)
     print("Inference Time:", inference_time)
     vlm_control = parse_chat_response(chat_response.choices[0].message)
     return vlm_control, response

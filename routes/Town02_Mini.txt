@@ -1,0 +1,4 @@
+39 71 0 Right
+50 80 0 Left
+68 63 0 Straight
+28 0 0
