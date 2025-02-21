@@ -4,9 +4,11 @@ import torch
 import carla
 import logging
 import numpy as np
+import json
+from dotenv import load_dotenv
 from PIL import Image
 from openai import OpenAI
-from utils.sensors import start_camera, start_vlm_camera, start_collision_sensor, start_obstacle_detector
+from utils.sensors import start_camera, start_vlm_camera, start_collision_sensor
 from utils.shared_utils import (init_world, read_routes, create_route, traffic_light_to_int, to_depth,
                                 spawn_ego_vehicle, spawn_vehicles, setup_traffic_manager, traffic_light_to_int,
                                 cleanup, update_spectator, to_rgb, calculate_delta_yaw, spawn_pedestrians, cleanup_pedestrians, 
@@ -28,14 +30,6 @@ def collision_callback(data):
     collision_type = type(data.other_actor)
     has_collision = True
 
-obstacle_detected = False
-def obstacle_callback(data):
-    global obstacle_detected
-    if data:
-        obstacle_detected = True
-    else:
-        obstacle_detected = False
-
 total_num_vehicle_collisions = 0
 total_num_walker_collisions = 0
 total_num_other_collisions = 0
@@ -49,6 +43,8 @@ num_other_collisions = 0
 num_red_light_infractions = 0
 num_timeouts = 0
 num_wrong_turns = 0
+
+results_frame = 0
 
 def end_reached(ego_vehicle, end_point):
     vehicle_location = ego_vehicle.get_location()
@@ -96,6 +92,23 @@ def check_collision(prev_collision):
     collision_type = None
     return prev_collision
 
+def save_images(images_dir, images):
+    for image_filename, image in images:
+        image_path = os.path.join(images_dir, image_filename)
+        image.save(image_path)
+
+def save_episode_data(prompts_labels_path, episode_data):
+    if os.path.exists(prompts_labels_path):
+        with open(prompts_labels_path, "r") as f:
+            all_data = json.load(f)
+    else:
+        all_data = []
+
+    all_data.extend(episode_data)
+
+    with open(prompts_labels_path, "w") as f:
+        json.dump(all_data, f, indent=4)
+
 def run_episode(world, model, device, ego_vehicle, rgb_cam, vlm_cam, depth_cam, end_point, route, route_length, max_frames, openai_client):
     global has_collision, collision_type, num_other_collisions, num_vehicle_collisions, num_walker_collisions, total_num_other_collisions, total_num_vehicle_collisions, total_num_walker_collisions
     num_other_collisions = 0
@@ -111,14 +124,20 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, vlm_cam, depth_cam, 
     global num_timeouts, total_num_timeouts
     num_timeouts = 0
 
-    global obstacle_detected
-    obstacle_detected = False
+    global results_frame
 
     dist_tracker = DistanceTracker()
     hlc_loader = HighLevelCommandLoader(ego_vehicle, world.get_map(), route)
     spectator = world.get_spectator()
     for _ in range(10):
         world.tick()
+
+    results_dir = "vlm_evaluation_results"
+    images_dir = os.path.join(results_dir, "images")
+    os.makedirs(images_dir, exist_ok=True)
+    results_json_path = os.path.join(results_dir, "results.json")
+    data = []
+    images = []
 
     frame = 0
     prev_hlc = 0
@@ -128,6 +147,7 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, vlm_cam, depth_cam, 
     running_light = False
     prev_collision = False
     while True:
+        print(f"Frame #{frame}")
         prev_collision = check_collision(prev_collision)
 
         if end_episode(ego_vehicle, end_point, frame, max_frames, turning_infraction):
@@ -171,6 +191,9 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, vlm_cam, depth_cam, 
         sensor_data = np.array(to_rgb(rgb_cam.get_sensor_data()))
         depth_map = np.array(to_depth(depth_cam.get_sensor_data()))
         vlm_image = Image.fromarray(to_rgb(vlm_cam.get_sensor_data()))
+        
+        image_path = f"frame_{results_frame:03d}.jpg"
+        images.append((image_path, vlm_image))
 
         light_status = -1
         if ego_vehicle.is_at_traffic_light():
@@ -188,16 +211,16 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, vlm_cam, depth_cam, 
         light = np.array([traffic_light_to_int(light_status)])
 
         control = model_control(sensor_data, depth_map, hlc, speed_km_h_cnn, light, model, device)
-        if obstacle_detected and speed_km_h > 0.1:
-            vlm_control = vlm_inference(openai_client, vlm_image, hlc, speed_km_h, control.steer, control.brake, control.throttle)
-            ego_vehicle.apply_control(vlm_control)
-            obstacle_detected = False
-        else:
-            ego_vehicle.apply_control(control)
+        vlm_control, response = vlm_inference(openai_client, vlm_image, hlc, speed_km_h, control.steer, control.brake, control.throttle)
+        data.append({"image_path": image_path, "response": str(response)})
+        ego_vehicle.apply_control(vlm_control)
         dist_tracker.update(ego_vehicle)
         world.tick()
         frame += 1
+        results_frame += 1
 
+    save_episode_data(results_json_path, data)
+    save_images(images_dir, images)
     if end_reached(ego_vehicle, end_point):
         logging.info("Route completion: 1.0")
         return True, 1.0
@@ -252,9 +275,7 @@ def main(args):
         vlm_cam = start_vlm_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
-        obstacle_detector = start_obstacle_detector(world, ego_vehicle)
-        obstacle_detector.listen(obstacle_callback)
-        sensors = [rgb_cam.get_sensor(), vlm_cam.get_sensor(), depth_cam.get_sensor(), collision_sensor, obstacle_detector]
+        sensors = [rgb_cam.get_sensor(), vlm_cam.get_sensor(), depth_cam.get_sensor(), collision_sensor]
 
         episode_completed, route_completion = run_episode(world, model, device, ego_vehicle, rgb_cam, vlm_cam, depth_cam, end_point, route, route_length, args.max_frames, openai_client)
         if episode_completed:
@@ -301,20 +322,21 @@ def main(args):
     logging.info(f"Average driving score: {sum(driving_scores) / episode_count}")
 
 if __name__ == '__main__':
+    load_dotenv('.env')
     parser = argparse.ArgumentParser(description='CARLA Model Evaluation Script')
     parser.add_argument('--town', type=str, default='Town02', help='CARLA town to use')
     parser.add_argument('--weather', type=str, default='ClearNoon', help='Weather condition to set')
-    parser.add_argument('--max_frames', type=int, default=5000, help='Number of frames before terminating episode')
+    parser.add_argument('--max_frames', type=int, default=2000, help='Number of frames before terminating episode')
     parser.add_argument('--episodes', type=int, default=12, help='Number of episodes to evaluate for')
     parser.add_argument('--vehicles', type=int, default=50, help='Number of vehicles present')
     parser.add_argument('--pedestrians', type=int, default=50, help='Number of pedestrians present')
     parser.add_argument('--route_file', type=str, default='routes/Town02_All.txt', help='Filepath for route file')
     parser.add_argument('--model', type=str, default='av_model.pt', help='Name of saved model')
-    parser.add_argument('--ip', type=str, default='localhost', help='IP address of VLM server')
+    parser.add_argument('--ip', type=str, default=os.getenv('VLM_SERVER_IP'), help='IP address of VLM server')
     parser.add_argument('--port', type=str, default='8000', help='Port of VLM server')
     args = parser.parse_args()
     
-    logging.basicConfig(filename=f'evaluation_{args.model}_vlm.log', 
+    logging.basicConfig(filename=f'vlm_evaluation.log', 
                         level=logging.INFO,
                         format='%(message)s' )
     
