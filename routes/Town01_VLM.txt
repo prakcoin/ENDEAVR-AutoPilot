@@ -16,3 +16,5 @@
 130 32 381 Straight
 116 99 299 Straight Right Straight
 100 204 336 Straight Left Straight
+158 227 432 Right Left
+80 68 446 Left Right

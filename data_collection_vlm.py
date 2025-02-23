@@ -651,7 +651,7 @@ def save_episode_data(prompts_labels_path, episode_data):
     with open(prompts_labels_path, "w") as f:
         json.dump(all_data, f, indent=4)
 
-def run_episode(world, weather, ego_vehicle, agent, rgb_cam, lidar_sensor, end_point, collect_correct, episode, args):
+def run_episode(world, weather, ego_vehicle, agent, rgb_cam, lidar_sensor, end_point, episode, args):
     global has_collision
     has_collision = False
 
@@ -676,8 +676,9 @@ def run_episode(world, weather, ego_vehicle, agent, rgb_cam, lidar_sensor, end_p
 
         update_spectator(spectator, ego_vehicle)
         
-        correct_control, incorrect_control, ec = agent.run_step()
-        ego_vehicle.apply_control(correct_control)
+        correct_control, noisy_control, incorrect_control, ec = agent.run_step()
+        if noisy_control:
+            ego_vehicle.apply_control(noisy_control)
 
         rgb_data = to_rgb(rgb_cam.get_sensor_data())
         lidar_data = lidar_to_ego_coordinate(lidar_sensor.get_sensor_data())
@@ -716,23 +717,26 @@ def run_episode(world, weather, ego_vehicle, agent, rgb_cam, lidar_sensor, end_p
         map = world.get_map()
         ego_location = ego_vehicle.get_location()
         waypoint = map.get_waypoint(ego_location)
-        selected_control = correct_control if collect_correct else incorrect_control
-        finetune_prompt = generate_prompt(hlc, speed_km_h, selected_control.steer, selected_control.brake, selected_control.throttle)
+        correct_finetune_prompt = generate_prompt(hlc, speed_km_h, correct_control.steer, correct_control.brake, correct_control.throttle)
+        incorrect_finetune_prompt = generate_prompt(hlc, speed_km_h, incorrect_control.steer, incorrect_control.brake, incorrect_control.throttle)
         scene_description = get_scene_description(world=world, ego_vehicle=ego_vehicle, lidar=lidar_360)
-        if collect_correct:
-            label = generate_label(world, ego_vehicle, hlc, speed_km_h, correct_control.steer, correct_control.brake, correct_control.throttle, waypoint, ec, scene_description, collect_correct)
-        else:
-            label = generate_label(world, ego_vehicle, hlc, speed_km_h, correct_control.steer, correct_control.brake, correct_control.throttle, waypoint, ec, scene_description, collect_correct, incorrect_control.steer, incorrect_control.brake, incorrect_control.throttle)
+        correct_label = generate_label(world, ego_vehicle, hlc, speed_km_h, correct_control.steer, correct_control.brake, correct_control.throttle, waypoint, ec, scene_description, True)
+        incorrect_label = generate_label(world, ego_vehicle, hlc, speed_km_h, correct_control.steer, correct_control.brake, correct_control.throttle, waypoint, ec, scene_description, False, incorrect_control.steer, incorrect_control.brake, incorrect_control.throttle)
 
-        correct_str = "correct" if collect_correct else "incorrect"
-        image_filename = f"{args.town}_{weather}_episode_{episode + 1}_{correct_str}_frame_{frame:06d}.jpg"
-        images.append((image_filename, rgb_data))
-
-        data.append({
-            "image": f"{args.image_path}{image_filename}",
-            "prompt": finetune_prompt,
-            "label": label
-        })
+        image_filename = f"{args.town}_{weather}_episode_{episode + 1}_frame_{frame:06d}.jpg"
+        
+        if not agent.noise:
+            images.append((image_filename, rgb_data))
+            data.append({
+                "image": f"{args.image_path}{image_filename}",
+                "prompt": correct_finetune_prompt,
+                "label": correct_label
+            })
+            data.append({
+                "image": f"{args.image_path}{image_filename}",
+                "prompt": incorrect_finetune_prompt,
+                "label": incorrect_label
+            })
 
         last_ego_transform = ego_vehicle.get_transform()
         last_lidar = lidar_data
@@ -749,30 +753,40 @@ def main(args):
     traffic_manager = setup_traffic_manager(client)
 
     weather_conditions = [
+        "Default",
         "ClearNoon",
+        "ClearSunset",
+        "ClearNight",
+        "MidRainyNoon",
         "MidRainSunset",
+        "MidRainyNight",
+        "CloudyNoon",
+        "CloudySunset",
         "CloudyNight",
+        "WetNoon",
         "WetSunset",
+        "WetNight",
         "HardRainNoon",
+        "HardRainSunset",
+        "HardRainNight",
+        "SoftRainNoon",
+        "SoftRainSunset",
         "SoftRainNight",
+        "DustStorm",
     ]
     route_configs = read_routes(args.route_file)
     episode_count = args.episodes
 
-    weather = "SoftRainNight"
-    world.set_weather(getattr(carla.WeatherParameters, weather))
-
     all_id, all_actors, vehicle_list = [], [], []
     restart = False
     episode = 0
-    collect_correct = True
     while episode < episode_count:
         print(f'Episode: {episode + 1}')
         if not restart:
-            # weather_choice = random.choice(weather_conditions)
-            # weather_conditions.remove(weather_choice)
-            # world.set_weather(getattr(carla.WeatherParameters, weather_choice))
-            # world.tick()
+            weather_choice = random.choice(weather_conditions)
+            weather_conditions.remove(weather_choice)
+            world.set_weather(getattr(carla.WeatherParameters, weather_choice))
+            world.tick()
 
             num_tries = 0
             spawn_point_index, end_point_index, _, route = create_route(route_configs)
@@ -799,14 +813,13 @@ def main(args):
         sensors = [rgb_cam.get_sensor(), collision_sensor, lidar_sensor.get_sensor()]
         setup_vehicle_for_tm(traffic_manager, ego_vehicle)
 
-        run_episode(world, weather, ego_vehicle, agent, rgb_cam, lidar_sensor, end_point, collect_correct, episode, args)
+        run_episode(world, weather_choice, ego_vehicle, agent, rgb_cam, lidar_sensor, end_point, episode, args)
         if (has_collision):
             num_tries += 1
             episode -= 1
             restart = True
             print("Redoing ", end="")
         else:
-            collect_correct = not collect_correct
             restart = False
         cleanup(client, ego_vehicle, vehicle_list, sensors)
         cleanup_pedestrians(client, all_id, all_actors)
@@ -817,7 +830,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Data Collection (VLM) Script')
     parser.add_argument('--town', type=str, default='Town01', help='CARLA town to use')
     parser.add_argument('--max_frames', type=int, default=8000, help='Number of frames to collect per episode')
-    parser.add_argument('--episodes', type=int, default=18, help='Number of episodes to collect data for')
+    parser.add_argument('--episodes', type=int, default=20, help='Number of episodes to collect data for')
     parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')
     parser.add_argument('--pedestrians', type=int, default=40, help='Number of pedestrians present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_VLM.txt', help='Filepath for route file')

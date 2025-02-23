@@ -119,6 +119,10 @@ def spawn_vehicles(world, client, n_vehicles, traffic_manager, cars_only=True):
     blueprints = get_actor_blueprints(world, 'vehicle.*', 'All')
     if cars_only:
         blueprints = [x for x in blueprints if x.get_attribute('base_type') == 'car'] # cars only
+    excluded_bps = {"vehicle.carlamotors.european_hgv", "vehicle.carlamotors.firetruck", "vehicle.carlamotors.carlacola", "vehicle.mitsubishi.fusorosa"}
+    blueprints = [x for x in blueprints if x.id not in excluded_bps]
+    for b in blueprints:
+        print(b.id)
     blueprints = sorted(blueprints, key=lambda bp: bp.id)
     spawn_points = get_vehicle_spawn_points(world, n_vehicles)
 
@@ -395,7 +399,7 @@ def vlm_inference(openai_client, image, hlc, speed, steer, brake, throttle):
     prompt = generate_prompt(hlc, speed, steer, brake, throttle)
     start_time = time.time()
     chat_response = openai_client.chat.completions.create(
-        model="prakcoin/QwENDEAVR2-VL",
+        model="prakcoin/QwENDEAVR2.5-VL",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": [
