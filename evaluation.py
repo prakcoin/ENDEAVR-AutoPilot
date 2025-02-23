@@ -5,6 +5,7 @@ import carla
 import logging
 import numpy as np
 import json
+import random
 from dotenv import load_dotenv
 from PIL import Image
 from openai import OpenAI
@@ -243,7 +244,6 @@ def main(args):
     )
 
     world, client = init_world(args.town)
-    world.set_weather(getattr(carla.WeatherParameters, args.weather))
 
     traffic_manager = setup_traffic_manager(client)
     route_configs = read_routes(args.route_file)
@@ -255,7 +255,25 @@ def main(args):
     infraction_penalties = []
     driving_scores = []
 
+    weather_conditions = [
+        "CloudyNoon",
+        "CloudyNoon",
+        "MidRainyNight",
+        "MidRainyNight",
+        "CloudySunset",
+        "CloudySunset",
+        "WetNoon",
+        "WetNoon",
+        "HardRainNight",
+        "HardRainNight",
+        "SoftRainSunset",
+        "SoftRainSunset",
+    ]
+
     for episode in range(episode_count):
+        weather = random.choice(weather_conditions)
+        weather_conditions.remove(weather)
+        world.set_weather(getattr(carla.WeatherParameters, weather))
         spawn_point_index, end_point_index, route_length, route = create_route(route_configs)
         spawn_points = world.get_map().get_spawn_points()
         spawn_point = spawn_points[spawn_point_index]
@@ -325,8 +343,7 @@ if __name__ == '__main__':
     load_dotenv('.env')
     parser = argparse.ArgumentParser(description='CARLA Model Evaluation Script')
     parser.add_argument('--town', type=str, default='Town02', help='CARLA town to use')
-    parser.add_argument('--weather', type=str, default='ClearNoon', help='Weather condition to set')
-    parser.add_argument('--max_frames', type=int, default=2000, help='Number of frames before terminating episode')
+    parser.add_argument('--max_frames', type=int, default=3000, help='Number of frames before terminating episode')
     parser.add_argument('--episodes', type=int, default=12, help='Number of episodes to evaluate for')
     parser.add_argument('--vehicles', type=int, default=50, help='Number of vehicles present')
     parser.add_argument('--pedestrians', type=int, default=50, help='Number of pedestrians present')
