@@ -279,7 +279,7 @@ def main(args):
         spawn_point = spawn_points[spawn_point_index]
         end_point = spawn_points[end_point_index]
 
-        logging.info(f"Episode {episode}: route from spawn point #{spawn_point_index} to #{end_point_index}")
+        logging.info(f"Episode {episode} with {weather} weather: route from spawn point #{spawn_point_index} to #{end_point_index}")
 
         ego_vehicle = spawn_ego_vehicle(world, spawn_point)
         if (args.vehicles > 0):

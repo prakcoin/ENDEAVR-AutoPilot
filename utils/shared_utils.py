@@ -121,8 +121,6 @@ def spawn_vehicles(world, client, n_vehicles, traffic_manager, cars_only=True):
         blueprints = [x for x in blueprints if x.get_attribute('base_type') == 'car'] # cars only
     excluded_bps = {"vehicle.carlamotors.european_hgv", "vehicle.carlamotors.firetruck", "vehicle.carlamotors.carlacola", "vehicle.mitsubishi.fusorosa"}
     blueprints = [x for x in blueprints if x.id not in excluded_bps]
-    for b in blueprints:
-        print(b.id)
     blueprints = sorted(blueprints, key=lambda bp: bp.id)
     spawn_points = get_vehicle_spawn_points(world, n_vehicles)
 
