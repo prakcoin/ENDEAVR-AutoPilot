@@ -392,12 +392,11 @@ def reduce_image_size(image, scale=0.25):
 
 def vlm_inference(openai_client, image, hlc, speed, steer, brake, throttle):
     system_prompt = "You are a powerful vehicle control assistant with the primary responsibility of correcting or confirming vehicle control signals. You will analyze and validate control signals predicted by a convolutional neural network in the CARLA Simulator. You will use the following inputs:\n- Sensor data from a front RGB camera.\n- The current high-level command (one of: 'Follow the lane', 'Turn left at the junction', 'Turn right at the junction', or 'Go straight at the junction').\n- The ego vehicle's current speed in km/h.\n- Steer value (range: -1.0 to 1.0, where positive values indicate a right turn and negative values indicate a left turn).\n- Brake value (range: 0.0 to 1.0, where 0.0 is no braking and 1.0 is full braking, bringing the vehicle to a stop).\n- Throttle value (range: 0.0 to 1.0, where 0.0 is no acceleration and 1.0 is full acceleration).\nWhen validating or correcting control signals, consider the following factors:\n- Environmental Conditions: Weather, lighting, road type, lane markings, etc.\n- Traffic Context: Presence of nearby vehicles, pedestrians, traffic lights, or junctions.\n- High-Level Command: Ensure the control signals align with the intended maneuver (e.g., lane following, turning at a junction, going straight at a junction).\n- Current Speed: Adjust throttle and brake values to maintain safe speeds.\nProvide your response in a structured format, clearly stating whether the predicted signals are correct or incorrect. If incorrect, include the appropriate control signals for safe vehicle operation."
-    image = reduce_image_size(image)
     encoded_image = encode_image(image)
     prompt = generate_prompt(hlc, speed, steer, brake, throttle)
     start_time = time.time()
     chat_response = openai_client.chat.completions.create(
-        model="prakcoin/QwENDEAVR2.5-VL",
+        model="prakcoin/QwENDEAVR2.5-VL-7B",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": [

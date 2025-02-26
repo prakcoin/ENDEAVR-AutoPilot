@@ -40,12 +40,12 @@ def is_vehicle_visible_in_image(vehicle_obj):
     Check if a vehicle is visible in the image.
     """
     # Project the 3D points of the vehicle onto the 2D image plane
-    camera_matrix = build_projection_matrix(1024, 512, 110.0)
+    camera_matrix = build_projection_matrix(512, 256, 110.0)
     projected_2d_points = project_center_corners(vehicle_obj, camera_matrix)
     min_x = 0
-    max_x = 1024
+    max_x = 512
     min_y = 0
-    max_y = 384
+    max_y = 192
 
     # Check if any projected point is visible
     vehicle_is_visible = False
@@ -181,25 +181,158 @@ def project_center_corners(obj, K):
         
     return np.array(all_points_2d)
 
-def generate_prompt(hlc, speed, steer, brake, throttle):  
-    road_option_dict = {
-        "LaneFollow": "Follow the lane",
-        "Left": "Turn left at the junction",
-        "Right": "Turn right at the junction",
-        "Straight": "Go straight at the junction"
-    }    
-    lang_hlc = road_option_dict[hlc]
+def light_affects_ego(world, vehicle, speed):
+    world_map = world.get_map()
+    ego_wp = world_map.get_waypoint(vehicle.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
+    ego_rotation = vehicle.get_transform().rotation
+    ego_yaw = np.deg2rad(ego_rotation.yaw)
+    
+    if vehicle.is_at_traffic_light():
+        light_dict = {
+            carla.libcarla.TrafficLightState.Red: "The ego vehicle is at a red light and should remain stopped.",
+            carla.libcarla.TrafficLightState.Green: "The ego vehicle is at a green light and should proceed.",
+            carla.libcarla.TrafficLightState.Yellow: "The ego vehicle is at a yellow light and should proceed with caution."
+        }
+        traffic_light = vehicle.get_traffic_light()
+        light_status = traffic_light.get_state()
+        tl_state_vehicle = light_dict[light_status]
+    else:
+        nearby_tls = world.get_traffic_lights_from_waypoint(ego_wp, 50.0)
+        tl_state_vehicle = 'None'
+        if len(nearby_tls) == 0:
+            tl_state_vehicle = 'None'
+        else:
+            for tl in nearby_tls:
+                tl_wp = world_map.get_waypoint(tl.get_location(), project_to_road=True)
+                tl_rotation = tl.get_transform().rotation
+                tl_yaw = np.deg2rad(tl_rotation.yaw)
+                relative_yaw = normalize_angle(tl_yaw - ego_yaw)
 
-    prompt = (
-        "Analyze the following sensor data along with additional context data.\n\n"
-        f"- Current high-level command: {lang_hlc}\n"
-        f"- Current speed: {speed:.3f} km/h\n"
-        f"- Predicted steer value: {steer:.3f}\n"
-        f"- Predicted brake value: {brake:.3f}\n"
-        f"- Predicted throttle value: {throttle:.3f}\n\n"
-        "Determine if the predicted control signals are correct. If correct, confirm them. If incorrect, provide the appropriate values for safe vehicle control."
-    )
-    return prompt
+                orientation_relative_to_ego = relative_yaw * 180 / np.pi 
+                
+                if tl_wp.road_id == ego_wp.road_id and (45 < orientation_relative_to_ego or orientation_relative_to_ego < 135):
+                    tl_state_vehicle = str(tl.state)
+                    break
+        light_dict = {
+            "None": "The ego vehicle is not affected by a traffic light.",
+            "Red": "The upcoming traffic light is red, so the ego vehicle should prepare to stop.",
+            "Green": "The upcoming traffic light is green, so the ego vehicle should proceed.",
+            "Yellow": "The upcoming traffic light is yellow, so the ego vehicle should slow down."
+        }
+        if (tl_state_vehicle == "Red"):
+            if (speed < 0.2):
+                return "The upcoming traffic light is red. The ego vehicle should remain stopped."
+        tl_state_vehicle = light_dict[tl_state_vehicle]
+    return tl_state_vehicle
+
+def get_scene_description(world, ego_vehicle, lidar):
+    actors = world.get_actors()
+    vehicle_list = actors.filter('*vehicle*')
+    ped_list = actors.filter('*walker*')
+
+    world_map = world.get_map()
+    ego_wp = world_map.get_waypoint(ego_vehicle.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
+    ego_matrix = np.array(ego_vehicle.get_transform().get_matrix())
+    ego_rotation = ego_vehicle.get_transform().rotation
+    ego_yaw = np.deg2rad(ego_rotation.yaw)
+    ego_lane_direction = ego_wp.lane_id / abs(ego_wp.lane_id)
+
+    scene_description = []
+    for vehicle in vehicle_list:
+        if vehicle.id != ego_vehicle.id:
+            dist = vehicle.get_location().distance(ego_vehicle.get_location())
+
+            if dist < 50.0:
+                actor_type = "vehicle"
+                base_type = vehicle.attributes['base_type']
+                vehicle_wp = world_map.get_waypoint(vehicle.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
+                vehicle_control = vehicle.get_control()
+                vehicle_rotation = vehicle.get_transform().rotation
+                vehicle_matrix = np.array(vehicle.get_transform().get_matrix())
+                relative_pos = get_relative_transform(ego_matrix, vehicle_matrix)
+                same_road_as_ego = False
+                same_direction_as_ego = False
+                direction = vehicle_wp.lane_id / abs(vehicle_wp.lane_id)
+                speed = (3.6 * np.sqrt(vehicle.get_velocity().x**2 + vehicle.get_velocity().y**2 + vehicle.get_velocity().z**2))
+                yaw = np.deg2rad(vehicle_rotation.yaw)
+                relative_yaw = normalize_angle(yaw - ego_yaw)
+                vehicle_extent = vehicle.bounding_box.extent
+                vehicle_extent_list = [vehicle_extent.x, vehicle_extent.y, vehicle_extent.z]
+
+                if not lidar is None:
+                    num_in_bbox_points = get_points_in_bbox(relative_pos, relative_yaw, vehicle_extent_list, lidar)
+                else:
+                    num_in_bbox_points = -1
+                if direction == ego_lane_direction:
+                    same_direction_as_ego = True
+                if vehicle_wp.road_id == ego_wp.road_id:
+                    same_road_as_ego = True
+                try:
+                    rgb = tuple(map(int, vehicle.attributes['color'].split(',')))
+                    color_name = convert_rgb_to_names(rgb)
+                except:
+                    rgb = None
+                    color_name = None
+
+                scene_description.append({
+                    "type": actor_type,
+                    "base_type": base_type,
+                    "same_road": same_road_as_ego,
+                    "same_dir": same_direction_as_ego,
+                    'throttle': vehicle_control.throttle,
+                    'brake': vehicle_control.brake,
+                    'steer': vehicle_control.steer,
+                    "position": [relative_pos[0], relative_pos[1], relative_pos[2]],
+                    "is_in_junction": vehicle_wp.is_junction,
+                    "junction_id": vehicle_wp.junction_id,
+                    'yaw': relative_yaw,
+                    "speed": speed,
+                    "color": color_name,
+                    "id": vehicle.type_id,
+                    "distance": dist,
+                    'extent': vehicle_extent_list,
+                    'num_points': int(num_in_bbox_points),
+                })
+    for ped in ped_list:
+        dist = ped.get_location().distance(ego_vehicle.get_location())
+        if dist < 50.0:
+            actor_type = "pedestrian"
+            ped_wp = world_map.get_waypoint(ped.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
+            ped_matrix = np.array(ped.get_transform().get_matrix())
+            ped_relative_pos = get_relative_transform(ego_matrix, ped_matrix)
+            same_road_as_ego = False
+            same_direction_as_ego = False
+            direction = ped_wp.lane_id / abs(ped_wp.lane_id)
+            speed = (3.6 * np.sqrt(ped.get_velocity().x**2 + ped.get_velocity().y**2 + ped.get_velocity().z**2))
+            ped_rotation = ped.get_transform().rotation
+            ped_yaw = np.deg2rad(ped_rotation.yaw)
+            ped_relative_yaw = normalize_angle(ped_yaw - ego_yaw)
+            if direction == ego_lane_direction:
+                same_direction_as_ego = True
+            if ped_wp.road_id == ego_wp.road_id:
+                same_road_as_ego = True
+            ped_extent = ped.bounding_box.extent
+            ped_extent.x = max(1.5, ped_extent.x)
+            ped_extent.y = max(1.5, ped_extent.y)
+            ped_extent_list = [ped_extent.x, ped_extent.y, ped_extent.z]
+
+            if not lidar is None:
+                num_in_bbox_points = get_points_in_bbox(ped_relative_pos, ped_relative_yaw, ped_extent_list, lidar, "ped")
+            else:
+                num_in_bbox_points = -1
+
+            scene_description.append({
+                "type": actor_type,
+                "id": ped.type_id,
+                "position": [ped_relative_pos[0], ped_relative_pos[1], ped_relative_pos[2]],
+                "distance": dist,
+                "same_road": same_road_as_ego,
+                "same_dir": same_direction_as_ego,
+                "speed": speed,
+                'num_points': int(num_in_bbox_points),
+                'extent': ped_extent_list
+            })
+    return scene_description
 
 def generate_scene_description(scene_description, ego_speed):
     descriptions = []
@@ -404,25 +537,36 @@ def generate_explanation(correct_steer, correct_brake, correct_throttle,
 
     return explanation
 
+def generate_prompt(hlc, speed, steer, brake, throttle):  
+    road_option_dict = {
+        "LaneFollow": "Follow the lane",
+        "Left": "Turn left at the junction",
+        "Right": "Turn right at the junction",
+        "Straight": "Go straight at the junction"
+    }    
+    lang_hlc = road_option_dict[hlc]
+
+    prompt = (
+        "Analyze the following sensor data along with additional context data.\n\n"
+        f"- Current high-level command: {lang_hlc}\n"
+        f"- Current speed: {speed:.3f} km/h\n"
+        f"- Predicted steer value: {steer:.3f}\n"
+        f"- Predicted brake value: {brake:.3f}\n"
+        f"- Predicted throttle value: {throttle:.3f}\n\n"
+        "Determine if the predicted control signals are correct. If correct, confirm them. If incorrect, provide the appropriate values for safe vehicle control."
+    )
+    return prompt
+
 def generate_label(world, ego_vehicle, hlc, speed, correct_steer, correct_brake, correct_throttle, waypoint, ec, scene_description, collect_correct, incorrect_steer=None, incorrect_brake=None, incorrect_throttle=None):
     road_option_dict = {
-        "LaneFollow": "The high-level command is to follow the lane,",
+        "LaneFollow": "The high-level command is to follow the lane, so the ego vehicle must stay within the lane boundaries, even when the path curves.",
         "Left": "The high-level command is to turn left at the junction, so the ego vehicle should steer to the left.",
         "Right": "The high-level command is to turn right at the junction, so the ego vehicle should steer to the right.",
         "Straight": "The high-level command is to go straight at the junction, so the ego vehicle should maintain a near-zero steer value."
     }
     lang_hlc = road_option_dict[hlc]
-    if hlc == "LaneFollow" and correct_steer < -0.03:
-        lang_hlc += " since the road curves left, the ego vehicle should steer to the left."
-    elif hlc == "LaneFollow" and correct_steer > 0.03:
-        lang_hlc += " since the road curves right, the ego vehicle should steer to the right."
-    else:
-        lang_hlc += " so the ego vehicle should maintain a near-zero steer value."
-
     lang_scene = generate_scene_description(scene_description, speed)
-    
     explanation = generate_explanation(correct_steer, correct_brake, correct_throttle, ec, collect_correct, incorrect_steer, incorrect_brake, incorrect_throttle)
-
     lang_light = light_affects_ego(world, ego_vehicle, speed)
     at_junction = waypoint.is_junction
     
@@ -440,156 +584,3 @@ def generate_label(world, ego_vehicle, hlc, speed, correct_steer, correct_brake,
         f"- Throttle: {correct_throttle:.3f}"
     )
     return label
-
-def light_affects_ego(world, vehicle, speed):
-    world_map = world.get_map()
-    ego_wp = world_map.get_waypoint(vehicle.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
-    ego_rotation = vehicle.get_transform().rotation
-    ego_yaw = np.deg2rad(ego_rotation.yaw)
-    
-    if vehicle.is_at_traffic_light():
-        light_dict = {
-            carla.libcarla.TrafficLightState.Red: "The ego vehicle is at a red light and should remain stopped.",
-            carla.libcarla.TrafficLightState.Green: "The ego vehicle is at a green light and should proceed.",
-            carla.libcarla.TrafficLightState.Yellow: "The ego vehicle is at a yellow light and should proceed with caution."
-        }
-        traffic_light = vehicle.get_traffic_light()
-        light_status = traffic_light.get_state()
-        tl_state_vehicle = light_dict[light_status]
-    else:
-        nearby_tls = world.get_traffic_lights_from_waypoint(ego_wp, 50.0)
-        tl_state_vehicle = 'None'
-        if len(nearby_tls) == 0:
-            tl_state_vehicle = 'None'
-        else:
-            for tl in nearby_tls:
-                tl_wp = world_map.get_waypoint(tl.get_location(), project_to_road=True)
-                tl_rotation = tl.get_transform().rotation
-                tl_yaw = np.deg2rad(tl_rotation.yaw)
-                relative_yaw = normalize_angle(tl_yaw - ego_yaw)
-
-                orientation_relative_to_ego = relative_yaw * 180 / np.pi 
-                
-                if tl_wp.road_id == ego_wp.road_id and (45 < orientation_relative_to_ego or orientation_relative_to_ego < 135):
-                    tl_state_vehicle = str(tl.state)
-                    break
-        light_dict = {
-            "None": "The ego vehicle is not affected by a traffic light.",
-            "Red": "The upcoming traffic light is red, so the ego vehicle should prepare to stop.",
-            "Green": "The upcoming traffic light is green, so the ego vehicle should proceed.",
-            "Yellow": "The upcoming traffic light is yellow, so the ego vehicle should slow down."
-        }
-        if (tl_state_vehicle == "Red"):
-            if (speed < 0.2):
-                return "The upcoming traffic light is red. The ego vehicle should remain stopped."
-        tl_state_vehicle = light_dict[tl_state_vehicle]
-    return tl_state_vehicle
-
-def get_scene_description(world, ego_vehicle, lidar):
-    actors = world.get_actors()
-    vehicle_list = actors.filter('*vehicle*')
-    ped_list = actors.filter('*walker*')
-
-    world_map = world.get_map()
-    ego_wp = world_map.get_waypoint(ego_vehicle.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
-    ego_matrix = np.array(ego_vehicle.get_transform().get_matrix())
-    ego_rotation = ego_vehicle.get_transform().rotation
-    ego_yaw = np.deg2rad(ego_rotation.yaw)
-    ego_lane_direction = ego_wp.lane_id / abs(ego_wp.lane_id)
-
-    scene_description = []
-    for vehicle in vehicle_list:
-        if vehicle.id != ego_vehicle.id:
-            dist = vehicle.get_location().distance(ego_vehicle.get_location())
-
-            if dist < 50.0:
-                actor_type = "vehicle"
-                base_type = vehicle.attributes['base_type']
-                vehicle_wp = world_map.get_waypoint(vehicle.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
-                vehicle_control = vehicle.get_control()
-                vehicle_rotation = vehicle.get_transform().rotation
-                vehicle_matrix = np.array(vehicle.get_transform().get_matrix())
-                relative_pos = get_relative_transform(ego_matrix, vehicle_matrix)
-                same_road_as_ego = False
-                same_direction_as_ego = False
-                direction = vehicle_wp.lane_id / abs(vehicle_wp.lane_id)
-                speed = (3.6 * np.sqrt(vehicle.get_velocity().x**2 + vehicle.get_velocity().y**2 + vehicle.get_velocity().z**2))
-                yaw = np.deg2rad(vehicle_rotation.yaw)
-                relative_yaw = normalize_angle(yaw - ego_yaw)
-                vehicle_extent = vehicle.bounding_box.extent
-                vehicle_extent_list = [vehicle_extent.x, vehicle_extent.y, vehicle_extent.z]
-
-                if not lidar is None:
-                    num_in_bbox_points = get_points_in_bbox(relative_pos, relative_yaw, vehicle_extent_list, lidar)
-                else:
-                    num_in_bbox_points = -1
-                if direction == ego_lane_direction:
-                    same_direction_as_ego = True
-                if vehicle_wp.road_id == ego_wp.road_id:
-                    same_road_as_ego = True
-                try:
-                    rgb = tuple(map(int, vehicle.attributes['color'].split(',')))
-                    color_name = convert_rgb_to_names(rgb)
-                except:
-                    rgb = None
-                    color_name = None
-
-                scene_description.append({
-                    "type": actor_type,
-                    "base_type": base_type,
-                    "same_road": same_road_as_ego,
-                    "same_dir": same_direction_as_ego,
-                    'throttle': vehicle_control.throttle,
-                    'brake': vehicle_control.brake,
-                    'steer': vehicle_control.steer,
-                    "position": [relative_pos[0], relative_pos[1], relative_pos[2]],
-                    "is_in_junction": vehicle_wp.is_junction,
-                    "junction_id": vehicle_wp.junction_id,
-                    'yaw': relative_yaw,
-                    "speed": speed,
-                    "color": color_name,
-                    "id": vehicle.type_id,
-                    "distance": dist,
-                    'extent': vehicle_extent_list,
-                    'num_points': int(num_in_bbox_points),
-                })
-    for ped in ped_list:
-        dist = ped.get_location().distance(ego_vehicle.get_location())
-        if dist < 50.0:
-            actor_type = "pedestrian"
-            ped_wp = world_map.get_waypoint(ped.get_location(), project_to_road=True, lane_type=carla.libcarla.LaneType.Any)
-            ped_matrix = np.array(ped.get_transform().get_matrix())
-            ped_relative_pos = get_relative_transform(ego_matrix, ped_matrix)
-            same_road_as_ego = False
-            same_direction_as_ego = False
-            direction = ped_wp.lane_id / abs(ped_wp.lane_id)
-            speed = (3.6 * np.sqrt(ped.get_velocity().x**2 + ped.get_velocity().y**2 + ped.get_velocity().z**2))
-            ped_rotation = ped.get_transform().rotation
-            ped_yaw = np.deg2rad(ped_rotation.yaw)
-            ped_relative_yaw = normalize_angle(ped_yaw - ego_yaw)
-            if direction == ego_lane_direction:
-                same_direction_as_ego = True
-            if ped_wp.road_id == ego_wp.road_id:
-                same_road_as_ego = True
-            ped_extent = ped.bounding_box.extent
-            ped_extent.x = max(1.5, ped_extent.x)
-            ped_extent.y = max(1.5, ped_extent.y)
-            ped_extent_list = [ped_extent.x, ped_extent.y, ped_extent.z]
-
-            if not lidar is None:
-                num_in_bbox_points = get_points_in_bbox(ped_relative_pos, ped_relative_yaw, ped_extent_list, lidar, "ped")
-            else:
-                num_in_bbox_points = -1
-
-            scene_description.append({
-                "type": actor_type,
-                "id": ped.type_id,
-                "position": [ped_relative_pos[0], ped_relative_pos[1], ped_relative_pos[2]],
-                "distance": dist,
-                "same_road": same_road_as_ego,
-                "same_dir": same_direction_as_ego,
-                "speed": speed,
-                'num_points': int(num_in_bbox_points),
-                'extent': ped_extent_list
-            })
-    return scene_description
