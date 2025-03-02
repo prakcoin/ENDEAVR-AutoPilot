@@ -40,12 +40,12 @@ def is_vehicle_visible_in_image(vehicle_obj):
     Check if a vehicle is visible in the image.
     """
     # Project the 3D points of the vehicle onto the 2D image plane
-    camera_matrix = build_projection_matrix(512, 256, 110.0)
+    camera_matrix = build_projection_matrix(1024, 512, 110.0)
     projected_2d_points = project_center_corners(vehicle_obj, camera_matrix)
     min_x = 0
-    max_x = 512
+    max_x = 1024
     min_y = 0
-    max_y = 192
+    max_y = 384
 
     # Check if any projected point is visible
     vehicle_is_visible = False

@@ -1,6 +1,5 @@
 import argparse
 import os
-import random
 import numpy as np
 import carla
 from PIL import Image
@@ -141,11 +140,11 @@ def run_episode(world, weather, ego_vehicle, agent, rgb_cam, lidar_sensor, end_p
                 "prompt": correct_finetune_prompt,
                 "label": correct_label
             })
-            data.append({
-                "image": f"{args.image_path}{image_filename}",
-                "prompt": incorrect_finetune_prompt,
-                "label": incorrect_label
-            })
+            # data.append({
+            #     "image": f"{args.image_path}{image_filename}",
+            #     "prompt": incorrect_finetune_prompt,
+            #     "label": incorrect_label
+            # })
 
         last_ego_transform = ego_vehicle.get_transform()
         last_lidar = lidar_data
@@ -162,27 +161,16 @@ def main(args):
     traffic_manager = setup_traffic_manager(client)
 
     weather_conditions = [
-        "Default",
-        "ClearNoon",
-        "ClearSunset",
-        "ClearNight",
-        "MidRainyNoon",
-        "MidRainSunset",
-        "MidRainyNight",
-        "CloudyNoon",
-        "CloudySunset",
-        "CloudyNight",
-        "WetNoon",
-        "WetSunset",
-        "WetNight",
-        "HardRainNoon",
-        "HardRainSunset",
-        "HardRainNight",
-        "SoftRainNoon",
-        "SoftRainSunset",
+        "ClearNoon", 
+        "MidRainSunset", 
+        "CloudyNight", 
+        "WetSunset", 
+        "HardRainNoon", 
         "SoftRainNight",
-        "DustStorm",
     ]
+    weather_choice = "ClearNoon"
+    world.set_weather(getattr(carla.WeatherParameters, weather_choice))
+    world.tick()
     route_configs = read_routes(args.route_file)
     episode_count = args.episodes
 
@@ -192,11 +180,6 @@ def main(args):
     while episode < episode_count:
         print(f'Episode: {episode + 1}')
         if not restart:
-            weather_choice = random.choice(weather_conditions)
-            weather_conditions.remove(weather_choice)
-            world.set_weather(getattr(carla.WeatherParameters, weather_choice))
-            world.tick()
-
             num_tries = 0
             spawn_point_index, end_point_index, _, route = create_route(route_configs)
         
@@ -243,7 +226,7 @@ if __name__ == '__main__':
     parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')
     parser.add_argument('--pedestrians', type=int, default=40, help='Number of pedestrians present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_VLM.txt', help='Filepath for route file')
-    parser.add_argument('--image_path', type=str, default='/vlm data/images/', help='Filepath for images')
+    parser.add_argument('--image_path', type=str, default='correct images/', help='Filepath for images')
     args = parser.parse_args()
 
     main(args)
