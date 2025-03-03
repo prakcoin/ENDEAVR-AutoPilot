@@ -5,7 +5,6 @@ import torch
 import io
 import base64
 import re
-import time
 from model.AVModel import CNNTransformer
 import torch.nn.functional as F
 from torchvision.transforms import v2
@@ -395,7 +394,6 @@ def vlm_inference(openai_client, image, hlc, speed, steer, brake, throttle):
     image = reduce_image_size(image)
     encoded_image = encode_image(image)
     prompt = generate_prompt(hlc, speed, steer, brake, throttle)
-    start_time = time.time()
     chat_response = openai_client.chat.completions.create(
         model="prakcoin/QwENDEAVR2.5-VL-Base",
         messages=[
@@ -410,10 +408,6 @@ def vlm_inference(openai_client, image, hlc, speed, steer, brake, throttle):
         ],
         temperature=1.0
     )
-    end_time = time.time()
-    inference_time = end_time - start_time
     response = chat_response.choices[0].message.content
-    print(response)
-    print("Inference Time:", inference_time)
     vlm_control = parse_chat_response(chat_response.choices[0].message)
     return vlm_control, response
