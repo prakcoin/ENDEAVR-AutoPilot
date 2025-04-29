@@ -135,17 +135,18 @@ def run_episode(world, weather, ego_vehicle, agent, rgb_cam, lidar_sensor, end_p
         
         if not agent.noise:
             images.append((image_filename, rgb_data))
-            data.append({
-                "image": f"{args.image_path}{image_filename}",
-                "prompt": correct_finetune_prompt,
-                "label": correct_label
-            })
-            # data.append({
-            #     "image": f"{args.image_path}{image_filename}",
-            #     "prompt": incorrect_finetune_prompt,
-            #     "label": incorrect_label
-            # })
-
+            if args.collect_incorrect:
+                data.append({
+                    "image": f"{args.image_path}{image_filename}",
+                    "prompt": incorrect_finetune_prompt,
+                    "label": incorrect_label
+                })
+            else:
+                data.append({
+                    "image": f"{args.image_path}{image_filename}",
+                    "prompt": correct_finetune_prompt,
+                    "label": correct_label
+                })
         last_ego_transform = ego_vehicle.get_transform()
         last_lidar = lidar_data
 
@@ -227,6 +228,7 @@ if __name__ == '__main__':
     parser.add_argument('--pedestrians', type=int, default=40, help='Number of pedestrians present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_VLM.txt', help='Filepath for route file')
     parser.add_argument('--image_path', type=str, default='correct images/', help='Filepath for images')
+    parser.add_argument('--collect_incorrect', action="store_true", help="Enable incorrect signal collection")
     args = parser.parse_args()
 
     main(args)
