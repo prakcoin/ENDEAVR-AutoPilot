@@ -212,8 +212,13 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, vlm_cam, depth_cam, 
         light = np.array([traffic_light_to_int(light_status)])
 
         control = model_control(sensor_data, depth_map, hlc, speed_km_h_cnn, light, model, device)
-        vlm_control, response = vlm_inference(openai_client, vlm_image, hlc, speed_km_h, control.steer, control.brake, control.throttle)
-        data.append({"image_path": image_path, "response": str(response)})
+        vlm_control, prompt, response = vlm_inference(openai_client, vlm_image, hlc, speed_km_h, control.steer, control.brake, control.throttle)
+        data.append({"image_path": image_path, 
+                     "prompt": str(prompt),
+                     "response": str(response),
+                     "cnn_control": (control.steer, control.brake, control.throttle),
+                     "vlm_control": (vlm_control.steer, vlm_control.brake, vlm_control.throttle),
+                     })
         ego_vehicle.apply_control(vlm_control)
         dist_tracker.update(ego_vehicle)
         world.tick()

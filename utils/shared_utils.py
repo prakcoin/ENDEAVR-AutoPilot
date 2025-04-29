@@ -410,4 +410,4 @@ def vlm_inference(openai_client, image, hlc, speed, steer, brake, throttle):
     )
     response = chat_response.choices[0].message.content
     vlm_control = parse_chat_response(chat_response.choices[0].message)
-    return vlm_control, response
+    return vlm_control, prompt, response
