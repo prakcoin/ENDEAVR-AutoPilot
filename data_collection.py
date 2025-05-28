@@ -4,9 +4,9 @@ import numpy as np
 import h5py
 import carla
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
-                                spawn_ego_vehicle, spawn_vehicles, create_route, to_rgb, to_depth,
+                                spawn_ego_vehicle, spawn_vehicles, create_route, to_rgb,
                                 road_option_to_int, cleanup, update_spectator, read_routes, 
-                                get_traffic_light_status, traffic_light_to_int)
+                                spawn_pedestrians, cleanup_pedestrians)
 from utils.sensors import start_camera, start_collision_sensor
 from utils.agents import NoisyImitationLearningAgent
 
@@ -47,17 +47,15 @@ def update_data_file(episode_data, episode_count):
             data_array = np.array(data_array)
             file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
 
-def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam, depth_cam, end_point, args):
+def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam, end_point, args):
     global has_collision
     has_collision = False
 
     episode_data = {
         'rgb': [],
-        'depth': [],
         'controls': [],
         'speed': [],
         'hlc': [],
-        'light': [],
     }
 
     spectator = world.get_spectator()
@@ -76,7 +74,6 @@ def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam, depth_cam, en
             ego_vehicle.apply_control(noisy_control)
 
         rgb_data = to_rgb(rgb_cam.get_sensor_data())
-        depth_map = to_depth(depth_cam.get_sensor_data())
 
         velocity = ego_vehicle.get_velocity()
         speed_km_h = (3.6 * np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2))
@@ -84,11 +81,9 @@ def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam, depth_cam, en
         if not agent.noise:
             frame_data = {
                 'rgb': np.array(rgb_data),
-                'depth': np.array(depth_map),
                 'controls': np.array([control.steer, control.throttle, control.brake]),
                 'speed': np.array([speed_km_h]),
                 'hlc': np.array([road_option_to_int(agent.get_next_action())]),
-                'light': np.array([traffic_light_to_int(get_traffic_light_status(ego_vehicle))])
             }
             for key, value in frame_data.items():
                 episode_data[key].append(value)
@@ -104,6 +99,15 @@ def main(args):
     traffic_manager = setup_traffic_manager(client)
     world.set_weather(getattr(carla.WeatherParameters, args.weather))
     world.tick()
+
+    weather_conditions = [
+        "ClearNoon", 
+        "MidRainSunset", 
+        "CloudyNight", 
+        "WetSunset", 
+        "HardRainNoon", 
+        "SoftRainNight",
+    ]
 
     route_configs = read_routes(args.route_file)
     episode_count = args.episodes
@@ -128,15 +132,17 @@ def main(args):
         agent.set_route(route, end_point)
 
         if (args.vehicles > 0):
-            vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager)
+            vehicle_list = spawn_vehicles(world, client, args.vehicles, traffic_manager, cars_only=False)
+        if (args.pedestrians > 0):
+            all_id, all_actors, _ = spawn_pedestrians(world, client, args.pedestrians)
 
-        rgb_cam, depth_cam = start_camera(world, ego_vehicle)
+        rgb_cam = start_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
-        sensors = [rgb_cam.get_sensor(), depth_cam.get_sensor(), collision_sensor]
+        sensors = [rgb_cam.get_sensor(), collision_sensor]
         setup_vehicle_for_tm(traffic_manager, ego_vehicle)
 
-        run_episode(world, episode, ego_vehicle, agent, rgb_cam, depth_cam, end_point, args)
+        run_episode(world, episode, ego_vehicle, agent, rgb_cam, end_point, args)
         if (has_collision):
             num_tries += 1
             episode -= 1
@@ -145,6 +151,7 @@ def main(args):
         else:
             restart = False
         cleanup(client, ego_vehicle, vehicle_list, sensors)
+        cleanup_pedestrians(client, all_id, all_actors)
         episode += 1
     print("Simulation complete")
 
@@ -155,6 +162,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_frames', type=int, default=8000, help='Number of frames to collect per episode')
     parser.add_argument('--episodes', type=int, default=16, help='Number of episodes to collect data for')
     parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')
+    parser.add_argument('--pedestrians', type=int, default=40, help='Number of pedestrians present')
     parser.add_argument('--route_file', type=str, default='routes/Town01_Train.txt', help='Filepath for route file')
     args = parser.parse_args()
 

@@ -6,10 +6,10 @@ import logging
 import numpy as np
 import random
 from utils.sensors import start_camera, start_collision_sensor
-from utils.shared_utils import (init_world, read_routes, create_route, traffic_light_to_int, to_depth,
-                                spawn_ego_vehicle, spawn_vehicles, setup_traffic_manager, traffic_light_to_int,
-                                cleanup, update_spectator, to_rgb, calculate_delta_yaw, cleanup_pedestrians,
-                                model_control, load_model, spawn_pedestrians, inject_vehicle_noise)
+from utils.shared_utils import (init_world, read_routes, create_route, spawn_ego_vehicle, spawn_vehicles, 
+                                setup_traffic_manager, cleanup, update_spectator, to_rgb, calculate_delta_yaw, 
+                                cleanup_pedestrians, model_control, load_model, spawn_pedestrians, 
+                                inject_vehicle_noise)
 from utils.dist_tracker import DistanceTracker
 from utils.hlc_loader import HighLevelCommandLoader
 
@@ -87,7 +87,7 @@ def check_collision(prev_collision):
     collision_type = None
     return prev_collision
 
-def run_episode(world, model, device, ego_vehicle, rgb_cam, depth_cam, end_point, route, route_length, max_frames):
+def run_episode(world, model, device, ego_vehicle, rgb_cam, end_point, route, route_length, max_frames):
     global has_collision, collision_type, num_other_collisions, num_vehicle_collisions, num_walker_collisions, total_num_other_collisions, total_num_vehicle_collisions, total_num_walker_collisions
     num_other_collisions = 0
     num_vehicle_collisions = 0
@@ -113,7 +113,6 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, depth_cam, end_point
     prev_yaw = 0
     delta_yaw = 0
     turning_infraction = False
-    running_light = False
     prev_collision = False
     while True:
         prev_collision = check_collision(prev_collision)
@@ -157,24 +156,8 @@ def run_episode(world, model, device, ego_vehicle, rgb_cam, depth_cam, end_point
 
         update_spectator(spectator, ego_vehicle)
         sensor_data = np.array(to_rgb(rgb_cam.get_sensor_data()))
-        depth_map = np.array(to_depth(depth_cam.get_sensor_data()))
 
-        light_status = -1
-        if ego_vehicle.is_at_traffic_light():
-            traffic_light = ego_vehicle.get_traffic_light()
-            light_status = traffic_light.get_state()
-            traffic_light_location = traffic_light.get_transform().location
-            distance_to_traffic_light = np.sqrt((vehicle_location.x - traffic_light_location.x)**2 + (vehicle_location.y - traffic_light_location.y)**2)
-            if light_status == carla.libcarla.TrafficLightState.Red and distance_to_traffic_light < 6 and speed_m_s > 5:
-                if not running_light:
-                    running_light = True
-                    num_red_light_infractions += 1
-                    total_num_red_light_infractions += 1
-            else:
-                running_light = False
-        light = np.array([traffic_light_to_int(light_status)])
-
-        control = model_control(sensor_data, depth_map, hlc, speed_km_h, light, model, device)
+        control = model_control(sensor_data, hlc, speed_km_h, model, device)
         ego_vehicle.apply_control(control)
         dist_tracker.update(ego_vehicle)
         world.tick()
@@ -242,12 +225,12 @@ def main(args):
         if (args.pedestrians > 0):
             all_id, all_actors, _ = spawn_pedestrians(world, client, args.pedestrians)
 
-        rgb_cam_main, depth_cam = start_camera(world, ego_vehicle)
+        rgb_cam = start_camera(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
-        sensors = [rgb_cam_main.get_sensor(), depth_cam.get_sensor(), collision_sensor]
+        sensors = [rgb_cam.get_sensor(), collision_sensor]
 
-        episode_completed, route_completion = run_episode(world, model, device, ego_vehicle, rgb_cam_main, depth_cam, end_point, route, route_length, args.max_frames)
+        episode_completed, route_completion = run_episode(world, model, device, ego_vehicle, rgb_cam, end_point, route, route_length, args.max_frames)
         if episode_completed:
             completed_episodes += 1
 
@@ -299,10 +282,10 @@ if __name__ == '__main__':
     parser.add_argument('--vehicles', type=int, default=50, help='Number of vehicles present')
     parser.add_argument('--pedestrians', type=int, default=50, help='Number of pedestrians present')
     parser.add_argument('--route_file', type=str, default='routes/Town02_All.txt', help='Filepath for route file')
-    parser.add_argument('--model', type=str, default='av_model.pt', help='Name of saved model')
+    parser.add_argument('--model', type=str, default='tfpp_model.pt', help='Name of saved model')
     args = parser.parse_args()
     
-    logging.basicConfig(filename=f'cnn_evaluation3.log', 
+    logging.basicConfig(filename=f'evaluation.log', 
                         level=logging.INFO,
                         format='%(message)s' ) 
 

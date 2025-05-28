@@ -27,29 +27,12 @@ def init_world(town):
 def setup_traffic_manager(client):
     traffic_manager = client.get_trafficmanager(8000)
     traffic_manager.set_synchronous_mode(True)
-    traffic_manager.set_global_distance_to_leading_vehicle(2.5)
     traffic_manager.set_hybrid_physics_mode(True)
     traffic_manager.set_hybrid_physics_radius(70.0)
     return traffic_manager
 
 def setup_vehicle_for_tm(traffic_manager, ego_vehicle):
     ego_vehicle.set_autopilot(True)
-    traffic_manager.distance_to_leading_vehicle(ego_vehicle, 4.0)
-    traffic_manager.set_desired_speed(ego_vehicle, 40)
-
-def set_red_light_time(world):
-    actor_list = world.get_actors()
-    for actor_ in actor_list:
-        if isinstance(actor_, carla.TrafficLight):
-            actor_.set_red_time(1.0)
-
-def set_traffic_lights_green(world):
-    traffic_lights = world.get_actors().filter('traffic.traffic_light')
-    
-    for traffic_light in traffic_lights:
-        traffic_light.set_state(carla.TrafficLightState.Green)
-        traffic_light.set_green_time(9999)
-        traffic_light.freeze(True)
 
 def get_traffic_light_status(vehicle):
     light_status = -1
@@ -252,15 +235,6 @@ def to_rgb(image):
     image_array = image_array.copy()
     return image_array
 
-def to_depth(image):
-    image.convert(carla.ColorConverter.LogarithmicDepth)
-    image_array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-    image_array = np.reshape(image_array, (image.height, image.width, 4))
-    image_array = image_array[:, :, :1]
-    image_array = image_array[:, :, ::-1]
-    image_array = image_array.copy()
-    return image_array
-
 def read_routes(filename):
     with open(filename, 'r') as f:
         lines = f.readlines()
@@ -292,16 +266,11 @@ def load_model(model_path, device):
     model.eval()
     return model
 
-def model_control(rgb, depth_map, hlc, speed, light, model, device):
+def model_control(rgb, hlc, speed, model, device):
     rgb = torch.tensor(rgb).permute(2, 0, 1)
     rgb = rgb / 255.0
-
-    depth_map = torch.tensor(depth_map).permute(2, 0, 1)
-    depth_map = depth_map / 255.0
-
-    rgb = v2.Normalize(mean=(0.4427, 0.4308, 0.4135), std=(0.1528, 0.1481, 0.1468))(rgb)
+    rgb = v2.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))(rgb)
     rgb = rgb.unsqueeze(0)
-    depth_map = depth_map.unsqueeze(0)
 
     hlc = torch.tensor(hlc, dtype=torch.long)
     hlc = F.one_hot(hlc.to(torch.int64), num_classes=4)
@@ -311,22 +280,16 @@ def model_control(rgb, depth_map, hlc, speed, light, model, device):
     speed = torch.clamp(speed / 40.0, 0, 1.0).to(torch.float32)
     speed = speed.unsqueeze(0)
 
-    light = torch.tensor(light, dtype=torch.long)
-    light = F.one_hot(light.to(torch.int64), num_classes=4)
-    light = light.unsqueeze(0)
-
     rgb = rgb.to(device)
-    depth_map = depth_map.to(device)
     hlc = hlc.to(device)
     speed = speed.to(device)
-    light = light.to(device)
 
-    throttle, steer, brake = inference(model, rgb, depth_map, hlc, speed, light)
+    throttle, steer, brake = inference(model, rgb, hlc, speed)
     return carla.VehicleControl(throttle=throttle, steer=steer, brake=brake)
 
-def inference(model, rgb, depth_map, hlc, speed, light):
+def inference(model, rgb, hlc, speed):
     with torch.no_grad():
-        output = model(rgb, depth_map, hlc, speed, light)
+        output = model(rgb, hlc, speed)
     
     output = output.detach().cpu().numpy().flatten()
     throttle_brake, steer = output

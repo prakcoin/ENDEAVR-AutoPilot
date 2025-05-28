@@ -1,4 +1,5 @@
 import torch
+import timm
 import torch.nn as nn
 from .residual_block import ResidualBlock
     
@@ -37,66 +38,60 @@ class DepthFeatureExtractor(nn.Module):
         return out
 
 
+class RegNetBackbone(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.backbone = timm.create_model("regnety_004", pretrained=True)
+        self.backbone.fc = None
+        self.backbone.global_pool = nn.AdaptiveAvgPool2d(output_size=1)
+        self.backbone.head = nn.Sequential()
+
+    def forward(self, x):
+        return self.backbone(x)
+
 class CNNTransformer(nn.Module):
-    def __init__(self, out_dim=64, embed_dim=64, num_heads=4, depth=4, mlp_ratio=4.0):
+    def __init__(self, out_dim=256, embed_dim=440, num_heads=4, depth=4):
         super(CNNTransformer, self).__init__()
-        self.rgb_extractor = RGBFeatureExtractor(out_dim=out_dim)
-        self.depth_extractor = DepthFeatureExtractor(out_dim=out_dim)
+        self.rgb_extractor = RegNetBackbone()
 
-        self.pos_emb = nn.Parameter(torch.zeros(1, 8 * 10 + 8 * 10, embed_dim))
-        self.speed_emb = nn.Linear(1, embed_dim)
+        self.pos_emb = nn.Parameter(torch.zeros(1, 8 * 16, embed_dim))
 
-        self.transformer_layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads, dim_feedforward=int(mlp_ratio * embed_dim), activation='relu', batch_first=True)
-        self.transformer = nn.TransformerEncoder(self.transformer_layer, num_layers=depth)
+        self.transformer_encoder_layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads, dim_feedforward=(4 * embed_dim), activation='relu', norm_first=True, batch_first=True)
+        self.transformer_encoder = nn.TransformerEncoder(self.transformer_encoder_layer, num_layers=depth)
         self.ln = nn.LayerNorm(embed_dim)
 
-        self.global_pool = nn.AdaptiveAvgPool2d(1)
+        self.change_channel_conv_image = nn.Conv2d(embed_dim, out_dim, (1, 1))
 
         self.regression_head = nn.Sequential(
-            nn.Linear(73, 50),
+            nn.Linear(out_dim + 5, 100),
+            nn.ReLU(),
+            nn.Linear(100, 50),
             nn.ReLU(),
             nn.Linear(50, 10),
             nn.ReLU(),
             nn.Linear(10, 2)
         )
 
-    def forward(self, rgb, depth, hlc, speed, light):
+    def forward(self, rgb, hlc, speed):
         rgb_features = self.rgb_extractor(rgb)
-        depth_features = self.depth_extractor(depth)
 
         rgb_bs, rgb_c, rgb_h, rgb_w = rgb_features.size()
         rgb_features_reshaped = rgb_features.reshape(rgb_bs, rgb_c, rgb_h * rgb_w).transpose(1, 2)
 
-        depth_bs, depth_c, depth_h, depth_w = depth_features.size()
-        depth_features_reshaped = depth_features.reshape(depth_bs, depth_c, depth_h * depth_w).transpose(1, 2)
-
-        transformer_features = torch.cat((rgb_features_reshaped, depth_features_reshaped), dim=1)
-
-        transformer_features = transformer_features + self.pos_emb
-        #transformer_features += self.speed_emb(speed).unsqueeze(1)
-        transformer_output = self.transformer(transformer_features)
+        transformer_features = rgb_features_reshaped + self.pos_emb
+        transformer_output = self.transformer_encoder(transformer_features)
         transformer_output = self.ln(transformer_output)
 
         rgb_features_out = transformer_output[:, :rgb_h * rgb_w, :].transpose(1, 2).reshape(rgb_bs, rgb_c, rgb_h, rgb_w)
-        depth_features_out = transformer_output[:, depth_h * depth_w:, :].transpose(1, 2).reshape(depth_bs, depth_c, depth_h, depth_w)
-
         rgb_features = rgb_features + rgb_features_out
-        depth_features = depth_features + depth_features_out
 
-        rgb_features = self.global_pool(rgb_features)
+        rgb_features = self.change_channel_conv_image(rgb_features)
+        rgb_features = self.rgb_extractor.backbone.global_pool(rgb_features)
         rgb_features = torch.flatten(rgb_features, 1)
-
-        depth_features = self.global_pool(depth_features)
-        depth_features = torch.flatten(depth_features, 1)
-
-        combined_features = rgb_features + depth_features
 
         speed = torch.flatten(speed, 1)
         hlc = torch.flatten(hlc, 1)
-        light = torch.flatten(light, 1)
-
-        x = torch.cat((combined_features, speed, hlc, light), dim=1)
-
+        x = torch.cat((rgb_features, speed, hlc), dim=1)
         x = self.regression_head(x)
         out = torch.sigmoid(x)
         return out
