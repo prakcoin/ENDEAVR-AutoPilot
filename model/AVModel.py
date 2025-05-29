@@ -1,42 +1,6 @@
 import torch
 import timm
 import torch.nn as nn
-from .residual_block import ResidualBlock
-    
-class RGBFeatureExtractor(nn.Module):
-    def __init__(self, out_dim):
-        super(RGBFeatureExtractor, self).__init__()
-        self.input_layer = nn.Conv2d(3, out_dim // 8, kernel_size=5)
-        self.conv_layers = nn.Sequential(
-            ResidualBlock(in_channels=out_dim // 8, out_channels=out_dim // 8, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=out_dim // 8, out_channels=out_dim // 4, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=out_dim // 4, out_channels=out_dim // 2, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=out_dim // 2, out_channels=out_dim, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=out_dim, out_channels=out_dim, kernel_size=3, stride=2, num_layers=2),
-        )
-
-    def forward(self, img):
-        x = self.input_layer(img)
-        out = self.conv_layers(x)
-        return out
-
-class DepthFeatureExtractor(nn.Module):
-    def __init__(self, out_dim):
-        super(DepthFeatureExtractor, self).__init__()
-        self.input_layer = nn.Conv2d(1, out_dim // 8, kernel_size=5)
-        self.conv_layers = nn.Sequential(
-            ResidualBlock(in_channels=out_dim // 8, out_channels=out_dim // 8, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=out_dim // 8, out_channels=out_dim // 4, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=out_dim // 4, out_channels=out_dim // 2, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=out_dim // 2, out_channels=out_dim, kernel_size=3, stride=2, num_layers=2),
-            ResidualBlock(in_channels=out_dim, out_channels=out_dim, kernel_size=3, stride=2, num_layers=2),
-        )
-
-    def forward(self, depth):
-        x = self.input_layer(depth)
-        out = self.conv_layers(x)
-        return out
-
 
 class RegNetBackbone(nn.Module):
     def __init__(self):
