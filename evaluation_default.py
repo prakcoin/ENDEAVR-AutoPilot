@@ -193,17 +193,17 @@ def main(args):
     driving_scores = []
 
     weather_conditions = [
-        "CloudyNoon",
-        "CloudyNoon",
+        "ClearSunset",
+        "ClearNight",
+        "MidRainyNoon",
         "MidRainyNight",
-        "MidRainyNight",
-        "CloudySunset",
+        "CloudyNoon",
         "CloudySunset",
         "WetNoon",
-        "WetNoon",
+        "WetNight",
+        "HardRainSunset",
         "HardRainNight",
-        "HardRainNight",
-        "SoftRainSunset",
+        "SoftRainNoon",
         "SoftRainSunset",
     ]
 
