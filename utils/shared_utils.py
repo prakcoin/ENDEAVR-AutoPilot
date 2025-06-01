@@ -277,7 +277,6 @@ def model_control(rgb, hlc, speed, model, device):
     hlc = hlc.unsqueeze(0)
 
     speed = torch.FloatTensor(speed)
-    speed = torch.clamp(speed / 40.0, 0, 1.0).to(torch.float32)
     speed = speed.unsqueeze(0)
 
     rgb = rgb.to(device)

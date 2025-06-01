@@ -26,8 +26,12 @@ class CNNTransformer(nn.Module):
 
         self.change_channel_conv_image = nn.Conv2d(embed_dim, out_dim, (1, 1))
 
+        self.velocity_normalization = nn.BatchNorm1d(1, affine=False)
+        self.context_encoder = nn.Sequential(nn.Linear(5, 128), nn.ReLU(inplace=True),
+                                                  nn.Linear(128, 128), nn.ReLU(inplace=True))
+
         self.regression_head = nn.Sequential(
-            nn.Linear(out_dim + 5, 100),
+            nn.Linear(out_dim + 128, 100),
             nn.ReLU(),
             nn.Linear(100, 50),
             nn.ReLU(),
@@ -53,9 +57,13 @@ class CNNTransformer(nn.Module):
         rgb_features = self.rgb_extractor.backbone.global_pool(rgb_features)
         rgb_features = torch.flatten(rgb_features, 1)
 
-        speed = torch.flatten(speed, 1)
-        hlc = torch.flatten(hlc, 1)
-        x = torch.cat((rgb_features, speed, hlc), dim=1)
+        context = []
+        context.append(self.velocity_normalization(speed))
+        context.append(hlc)
+        context = torch.cat(context, dim=1)
+        context = self.context_encoder(context)
+
+        x = torch.cat((rgb_features, context), dim=1)
         x = self.regression_head(x)
         out = torch.sigmoid(x)
         return out
