@@ -6,9 +6,10 @@ import carla
 from utils.shared_utils import (init_world, setup_traffic_manager, setup_vehicle_for_tm, 
                                 spawn_ego_vehicle, spawn_vehicles, create_route, to_rgb,
                                 road_option_to_int, cleanup, update_spectator, read_routes, 
-                                spawn_pedestrians, cleanup_pedestrians)
-from utils.sensors import start_camera, start_collision_sensor
+                                spawn_pedestrians, cleanup_pedestrians, align, lidar_to_histogram_features)
+from utils.sensors import start_camera, start_collision_sensor, start_lidar_sensor
 from utils.agents import NoisyImitationLearningAgent
+from utils.vlm_utils import lidar_to_ego_coordinate, align_lidar, normalize_angle_degree
 
 has_collision = False
 def collision_callback(data):
@@ -42,17 +43,18 @@ def update_data_file(episode_data, episode_count):
     if not os.path.isdir(f'data'):
         os.makedirs(f'data')
 
-    with h5py.File(f'data/episode_{episode_count + 1}.h5', 'w') as file:
+    with h5py.File(f'data/episode_{episode_count + 1 + 64}.h5', 'w') as file:
         for key, data_array in episode_data.items():
             data_array = np.array(data_array)
             file.create_dataset(key, data=data_array, maxshape=(None,) + data_array.shape[1:])
 
-def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam, end_point, args):
+def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam, lidar_sensor, end_point, args):
     global has_collision
     has_collision = False
 
     episode_data = {
         'rgb': [],
+        'lidar': [],
         'controls': [],
         'speed': [],
         'hlc': [],
@@ -61,6 +63,9 @@ def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam, end_point, ar
     spectator = world.get_spectator()
     for _ in range(10):
         world.tick()
+
+    last_lidar = None
+    last_ego_transform = None
 
     frame = 0
     while True:
@@ -74,19 +79,50 @@ def run_episode(world, episode_count, ego_vehicle, agent, rgb_cam, end_point, ar
             ego_vehicle.apply_control(noisy_control)
 
         rgb_data = to_rgb(rgb_cam.get_sensor_data())
+        lidar_data = lidar_to_ego_coordinate(lidar_sensor.get_sensor_data())
+
+        if last_lidar is not None:
+            ego_transform = ego_vehicle.get_transform()
+            ego_location = ego_transform.location
+            last_ego_location = last_ego_transform.location
+            relative_translation = np.array([
+                    ego_location.x - last_ego_location.x, ego_location.y - last_ego_location.y,
+                    ego_location.z - last_ego_location.z
+            ])
+
+            ego_yaw = ego_transform.rotation.yaw
+            last_ego_yaw = last_ego_transform.rotation.yaw
+            relative_rotation = np.deg2rad(normalize_angle_degree(ego_yaw - last_ego_yaw))
+
+            orientation_target = np.deg2rad(ego_yaw)
+            rotation_matrix = np.array([[np.cos(orientation_target), -np.sin(orientation_target), 0.0],
+                                                                    [np.sin(orientation_target),
+                                                                     np.cos(orientation_target), 0.0], [0.0, 0.0, 1.0]])
+            relative_translation = rotation_matrix.T @ relative_translation
+
+            lidar_last = align_lidar(last_lidar, relative_translation, relative_rotation)
+            lidar_360 = np.concatenate((lidar_data, lidar_last), axis=0)
+        else:
+            lidar_360 = lidar_data
 
         velocity = ego_vehicle.get_velocity()
         speed_km_h = (3.6 * np.sqrt(velocity.x**2 + velocity.y**2 + velocity.z**2))
 
+        lidar = lidar_to_histogram_features(lidar_360, False)
+
         if not agent.noise:
             frame_data = {
                 'rgb': np.array(rgb_data),
+                'lidar': np.array(lidar),
                 'controls': np.array([control.steer, control.throttle, control.brake]),
                 'speed': np.array([speed_km_h]),
                 'hlc': np.array([road_option_to_int(agent.get_next_action())]),
             }
             for key, value in frame_data.items():
                 episode_data[key].append(value)
+
+        last_ego_transform = ego_vehicle.get_transform()
+        last_lidar = lidar_data
 
         world.tick()
         frame += 1
@@ -137,12 +173,13 @@ def main(args):
             all_id, all_actors, _ = spawn_pedestrians(world, client, args.pedestrians)
 
         rgb_cam = start_camera(world, ego_vehicle)
+        lidar_sensor = start_lidar_sensor(world, ego_vehicle)
         collision_sensor = start_collision_sensor(world, ego_vehicle)
         collision_sensor.listen(collision_callback)
-        sensors = [rgb_cam.get_sensor(), collision_sensor]
+        sensors = [rgb_cam.get_sensor(), lidar_sensor.get_sensor(), collision_sensor]
         setup_vehicle_for_tm(traffic_manager, ego_vehicle)
 
-        run_episode(world, episode, ego_vehicle, agent, rgb_cam, end_point, args)
+        run_episode(world, episode, ego_vehicle, agent, rgb_cam, lidar_sensor, end_point, args)
         if (has_collision):
             num_tries += 1
             episode -= 1
@@ -158,7 +195,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CARLA Data Collection Script')
     parser.add_argument('--town', type=str, default='Town01', help='CARLA town to use')
-    parser.add_argument('--weather', type=str, default='ClearNoon', help='CARLA weather conditions to use')
+    parser.add_argument('--weather', type=str, default='HardRainNoon', help='CARLA weather conditions to use')
     parser.add_argument('--max_frames', type=int, default=8000, help='Number of frames to collect per episode')
     parser.add_argument('--episodes', type=int, default=16, help='Number of episodes to collect data for')
     parser.add_argument('--vehicles', type=int, default=80, help='Number of vehicles present')

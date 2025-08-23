@@ -6,6 +6,7 @@ import io
 import base64
 import re
 from model.AVModel import CNNTransformer
+from utils.vlm_utils import align_lidar, normalize_angle
 import torch.nn.functional as F
 from torchvision.transforms import v2
 
@@ -258,6 +259,74 @@ def cleanup_pedestrians(client, all_id, all_actors):
     for i in range(0, len(all_id), 2):
         all_actors[i].stop()
     client.apply_batch([carla.command.DestroyActor(x) for x in all_id])
+
+def align(lidar_0, measurements_0, measurements_1, y_augmentation=0.0, yaw_augmentation=0):
+    """
+    Converts the LiDAR from the coordinate system of measurements_0 to the
+    coordinate system of measurements_1. In case of data augmentation, the
+    shift of y and rotation around the yaw are taken into account, such that the
+    LiDAR is in the same coordinate system as the rotated camera.
+    :param lidar_0: (N,3) numpy, LiDAR point cloud
+    :param measurements_0: measurements describing the coordinate system of the LiDAR
+    :param measurements_1: measurements describing the target coordinate system
+    :param y_augmentation: Data augmentation shift in meters
+    :param yaw_augmentation: Data augmentation rotation in degree
+    :return: (N,3) numpy, Converted LiDAR
+    """
+    pos_1 = np.array([measurements_1['pos_global'][0], measurements_1['pos_global'][1], 0.0])
+    pos_0 = np.array([measurements_0['pos_global'][0], measurements_0['pos_global'][1], 0.0])
+    pos_diff = pos_1 - pos_0
+    rot_diff = normalize_angle(measurements_1['theta'] - measurements_0['theta'])
+
+    # Rotate difference vector from global to local coordinate system.
+    rotation_matrix = np.array([[np.cos(measurements_1['theta']), -np.sin(measurements_1['theta']), 0.0],
+                                [np.sin(measurements_1['theta']),
+                                 np.cos(measurements_1['theta']), 0.0], [0.0, 0.0, 1.0]])
+    pos_diff = rotation_matrix.T @ pos_diff
+
+    lidar_1 = align_lidar(lidar_0, pos_diff, rot_diff)
+
+    pos_diff_aug = np.array([0.0, y_augmentation, 0.0])
+    rot_diff_aug = np.deg2rad(yaw_augmentation)
+
+    lidar_1_aug = align_lidar(lidar_1, pos_diff_aug, rot_diff_aug)
+
+    return lidar_1_aug
+
+def lidar_to_histogram_features(lidar, use_ground_plane):
+    """
+    Convert LiDAR point cloud into 2-bin histogram over a fixed size grid
+    :param lidar: (N,3) numpy, LiDAR point cloud
+    :param use_ground_plane, whether to use the ground plane
+    :return: (2, H, W) numpy, LiDAR as sparse image
+    """
+
+    def splat_points(point_cloud):
+      # 256 x 256 grid
+      xbins = np.linspace(-32, 32,
+                          (32 - -32) * int(4.0) + 1)
+      ybins = np.linspace(-32, 32,
+                          (32 - -32) * int(4.0) + 1)
+      hist = np.histogramdd(point_cloud[:, :2], bins=(xbins, ybins))[0]
+      hist[hist > 5] = 5
+      overhead_splat = hist / 5
+      # The transpose here is an efficient axis swap.
+      # Comes from the fact that carla is x front, y right, whereas the image is y front, x right
+      # (x height channel, y width channel)
+      return overhead_splat.T
+
+    # Remove points above the vehicle
+    lidar = lidar[lidar[..., 2] < 100.0]
+    below = lidar[lidar[..., 2] <= 0.2]
+    above = lidar[lidar[..., 2] > 0.2]
+    below_features = splat_points(below)
+    above_features = splat_points(above)
+    if use_ground_plane:
+      features = np.stack([below_features, above_features], axis=-1)
+    else:
+      features = np.stack([above_features], axis=-1)
+    features = np.transpose(features, (2, 0, 1)).astype(np.float32)
+    return features
 
 def load_model(model_path, device):
     model = CNNTransformer()
